@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { createWithEqualityFn } from "zustand/traditional";
 import { persist, StateStorage } from "zustand/middleware";
 import produce from "immer";
 import { FunctionValue, Test, WasmFunctionCall } from "../components/problem/submission/tests";
@@ -52,7 +52,7 @@ export interface Store {
     setProblemImpl: (id: number, impl: string) => void;
 }
 
-export const useStore = create<Store>()(
+export const useStore = createWithEqualityFn<Store>()(
     persist(
         (set) => ({
             vimEnabled: false,
@@ -103,7 +103,7 @@ export interface Session {
     setError: (error: string, shown: boolean) => void;
 }
 
-export const useSession = create<Session>()((set) => ({
+export const useSession = createWithEqualityFn<Session>()((set) => ({
     error: "",
     errorShown: false,
     submissionShown: true,
@@ -169,7 +169,7 @@ export interface AdminState {
     popMeetingActivity: () => void;
 }
 
-export const useAdminStore = create<AdminState>()(
+export const useAdminStore = createWithEqualityFn<AdminState>()(
     persist(
         (set) => ({
             problemTitle: "",
