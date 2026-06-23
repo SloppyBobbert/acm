@@ -45,24 +45,34 @@ To start the API, build runner, and frontend together:
 ./scripts/dev-local.sh
 ```
 
+For manual startup, run each service in a separate terminal.
+
+Start the build runner:
+
+```sh
+cargo run --package ramiel
+```
+
+Start the API with the values from `.env`:
+
+```sh
+set -a
+source .env
+set +a
+cargo run --package server -- --hostname "$API_HOSTNAME"
+```
+
 Build the frontend automatically on changes:
 
 ```sh
 cd lilith
 corepack yarn install
-NEXT_PUBLIC_API_URL=http://127.0.0.1:8081 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8081/ws corepack yarn dev
-```
-
-Then run the server:
-
-```sh
-JWT_SECRET={JWT_SECRET} DISCORD_SECRET={DISCORD_SECRET} cargo run --package server
-```
-
-And finally run the build server.
-
-```sh
-cargo run --package ramiel
+set -a
+source ../.env
+set +a
+NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-http://${API_HOSTNAME:-127.0.0.1}:${PORT:-8081}}" \
+NEXT_PUBLIC_WS_URL="${NEXT_PUBLIC_WS_URL:-ws://${API_HOSTNAME:-127.0.0.1}:${PORT:-8081}/ws}" \
+corepack yarn dev
 ```
 
 ### Docker
