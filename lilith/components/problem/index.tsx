@@ -1,5 +1,4 @@
 import dynamic from "next/dynamic";
-import Error from "next/error";
 import Head from "next/head";
 import Link from "next/link";
 import { createContext } from "react";
@@ -82,7 +81,16 @@ export default function ProblemView({ id }: ProblemViewProps): JSX.Element {
         );
     }
 
-    if (error) return <Error statusCode={404} />;
+    if (error) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center gap-2 bg-white dark:bg-black p-8 text-center">
+                <h1 className="text-2xl font-bold">Could not load problem</h1>
+                <p className="max-w-md text-neutral-600 dark:text-neutral-400">
+                    Check that the API is running and that this problem is still available.
+                </p>
+            </div>
+        );
+    }
 
     return (
         <ProblemIDContext.Provider value={id}>
