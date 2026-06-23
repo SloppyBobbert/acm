@@ -16,7 +16,7 @@ fi
 : "${DATABASE_URL:=sqlite://./db.sqlite}"
 : "${JWT_SECRET:=dev-only-change-me}"
 : "${DISCORD_SECRET:=dev-only-change-me}"
-: "${API_HOSTNAME:=${HOSTNAME:-127.0.0.1}}"
+: "${API_HOSTNAME:=127.0.0.1}"
 : "${PORT:=8081}"
 : "${RAMIEL_HOSTNAME:=127.0.0.1}"
 : "${RAMIEL_PORT:=8082}"
