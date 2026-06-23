@@ -65,6 +65,18 @@ And finally run the build server.
 cargo run --package ramiel
 ```
 
+### Docker
+
+The Ramiel image uses the amd64 WASI SDK package. On Apple Silicon, build and run
+the local Docker images with `--platform linux/amd64`. Disable provenance for
+local builds so Docker can run the tagged images with the requested platform:
+
+```sh
+docker build --provenance=false --platform linux/amd64 -f Dockerfile.server -t acm-server:local .
+docker build --provenance=false --platform linux/amd64 -f Dockerfile.ramiel -t acm-ramiel:local .
+docker run --pull=never --platform linux/amd64 acm-ramiel:local
+```
+
 ## Planned Features
 
 - Import openly licensed Kattis/ICPC or DMOJ-style problem packages into the existing problem database. Imported packages should include reuse permission, statements, starter code, reference solutions, and hidden tests. Do not mirror LeetCode statements or tests without explicit permission.

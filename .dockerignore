@@ -1,0 +1,13 @@
+.git
+.local
+.next
+target
+db.sqlite*
+.env
+.env.local
+*.bk
+node_modules
+lilith/node_modules
+lilith/.next
+lilith/.env.local
+package-lock.json
