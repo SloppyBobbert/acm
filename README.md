@@ -59,7 +59,7 @@ Start the API with the values from `.env`:
 set -a
 source .env
 set +a
-cargo run --package server
+cargo run --package server -- --hostname "$API_HOSTNAME"
 ```
 
 Build the frontend automatically on changes:
