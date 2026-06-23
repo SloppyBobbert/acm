@@ -3,10 +3,6 @@ use sqlx::Type;
 
 use crate::WasmFunctionCall;
 
-trait RuntimeFactor {
-    fn get_factor(&self) -> u32;
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Type)]
 #[sqlx(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]

@@ -2,13 +2,13 @@ import { NextPage } from "next";
 import { useRouter } from "next/router";
 import { useEffect } from "react";
 import { api_url } from "../../utils/fetcher";
-import { useStore } from "../../utils/state";
+
+const redirect_uri = process.env.NODE_ENV == "production"
+  ? "https://chicoacm.org/auth/discord"
+  : "http://localhost:3000/auth/discord";
 
 const DiscordAuth: NextPage = () => {
   const router = useRouter();
-  const redirect_uri = process.env.NODE_ENV == "production"
-    ? "https://chicoacm.org/auth/discord"
-    : "http://localhost:3000/auth/discord";
 
   useEffect(() => {
     const fragment = new URLSearchParams(window.location.search);
@@ -37,7 +37,7 @@ const DiscordAuth: NextPage = () => {
         }
       })
       .catch(() => router.replace("/"));
-  }, []);
+  }, [router]);
 
   return <></>;
 };

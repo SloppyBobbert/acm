@@ -5,7 +5,7 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import { useState } from "react";
 import useSWR from "swr";
-import shallow from "zustand/shallow";
+import { shallow } from "zustand/shallow";
 import LoadingButton from "../../components/loading-button";
 import Navbar from "../../components/navbar";
 import DescriptionEditor from "../../components/problem-editor/description-editor";

@@ -4,7 +4,7 @@ use shared::models::{
     runner::{CustomInputResponse, Diagnostic, DiagnosticType, RunnerError, RunnerResponse},
     test::Test,
 };
-use std::{collections::HashSet, iter::Peekable, path::Path, str::Chars};
+use std::{iter::Peekable, path::Path, str::Chars};
 use tokio::{
     fs::{self, File},
     io::{AsyncReadExt, AsyncWriteExt},

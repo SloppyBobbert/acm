@@ -1,4 +1,4 @@
-import create from "zustand";
+import { create } from "zustand";
 import { persist, StateStorage } from "zustand/middleware";
 import produce from "immer";
 import { FunctionValue, Test, WasmFunctionCall } from "../components/problem/submission/tests";

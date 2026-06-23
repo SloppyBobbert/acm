@@ -1,7 +1,7 @@
 import { NextPage } from "next";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
-import shallow from "zustand/shallow";
+import { shallow } from "zustand/shallow";
 import Navbar from "../../components/navbar";
 import { api_url } from "../../utils/fetcher";
 import { useAdminStore, useSession, useStore } from "../../utils/state";

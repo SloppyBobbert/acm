@@ -45,7 +45,7 @@ pub enum RunnerError {
     #[error("Internal error:\n{}", message)]
     InternalServerError { message: String },
 
-    #[error("Process took too long to execute")]
+    #[error("Process took too long to execute: {message}")]
     TimeoutError { message: String },
 }
 

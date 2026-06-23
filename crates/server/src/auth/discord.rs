@@ -2,17 +2,12 @@ use std::{collections::HashMap, env};
 
 use axum::{Extension, Json};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::SqlitePool;
 
 use crate::error::{AuthError, ServerError};
 
 use super::{Auth, Claims, User, KEYS};
-
-#[derive(Serialize)]
-pub struct LoginBody {
-    token: String,
-}
 
 #[derive(Deserialize)]
 pub struct LoginForm {

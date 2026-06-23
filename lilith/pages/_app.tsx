@@ -4,7 +4,7 @@ import type { AppProps } from "next/app";
 import ErrorBox from "../components/error-box";
 import Modal from "../components/modal";
 import { useSession } from "../utils/state";
-import shallow from "zustand/shallow";
+import { shallow } from "zustand/shallow";
 import Head from "next/head";
 
 // marked.setOptions({
@@ -24,8 +24,6 @@ function ErrorDisplay(): JSX.Element {
         (state) => [state.error, state.errorShown, state.setError],
         shallow
     );
-
-    console.log(`displaying error: ${JSON.stringify(error)}`);
 
     return (
         <Modal shown={shown} onClose={() => setError(error, false)}>

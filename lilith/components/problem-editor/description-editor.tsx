@@ -1,7 +1,7 @@
 import { marked } from "marked";
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
-import shallow from "zustand/shallow";
+import { shallow } from "zustand/shallow";
 import renderLatex from "../../utils/latex";
 import { useAdminStore } from "../../utils/state";
 const Editor = dynamic(import("../../components/editor"), { ssr: false });

@@ -59,7 +59,7 @@ function LoadGraph<T extends ReactNode>({ data }: { data: T[][] }) {
         }
 
         loadGraph(graph);
-    }, [loadGraph]);
+    }, [loadGraph, data]);
 
     return null;
 };
