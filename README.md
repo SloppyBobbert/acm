@@ -67,7 +67,12 @@ Build the frontend automatically on changes:
 ```sh
 cd lilith
 corepack yarn install
-NEXT_PUBLIC_API_URL=http://127.0.0.1:8081 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8081/ws corepack yarn dev
+set -a
+source ../.env
+set +a
+NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-http://${API_HOSTNAME:-127.0.0.1}:${PORT:-8081}}" \
+NEXT_PUBLIC_WS_URL="${NEXT_PUBLIC_WS_URL:-ws://${API_HOSTNAME:-127.0.0.1}:${PORT:-8081}/ws}" \
+corepack yarn dev
 ```
 
 ### Docker
