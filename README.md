@@ -29,16 +29,16 @@ cd acm
 Initialize the database:
 
 ```sh
-echo "DATABASE_URL=sqlite://./sqlite.db" > .env
+echo "DATABASE_URL=sqlite://./db.sqlite" > .env
 touch db.sqlite
 ```
 
-Build the frontend automatically on changes
+Build the frontend automatically on changes:
 
 ```sh
 cd lilith
-yarn install
-yarn run dev
+corepack yarn install
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8081 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8081/ws corepack yarn dev
 ```
 
 Then run the server:
@@ -53,3 +53,6 @@ And finally run the build server.
 cargo run --package ramiel
 ```
 
+## Planned Features
+
+- Import openly licensed Kattis/ICPC or DMOJ-style problem packages into the existing problem database. Imported packages should include reuse permission, statements, starter code, reference solutions, and hidden tests. Do not mirror LeetCode statements or tests without explicit permission.
