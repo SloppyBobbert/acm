@@ -1,8 +1,10 @@
-FROM rustlang/rust:nightly AS builder
-COPY . .
-RUN cargo +nightly build --release --package ramiel
+ARG ACM_DOCKER_PLATFORM=linux/amd64
 
-FROM debian:bullseye-slim
+FROM --platform=$ACM_DOCKER_PLATFORM rust:1.92-bullseye AS builder
+COPY . .
+RUN cargo build --release --package ramiel
+
+FROM --platform=$ACM_DOCKER_PLATFORM debian:bullseye-slim
 
 RUN apt-get update; \
     apt-get install -y openssl libxml2 wget libxkbcommon-x11-0 libncurses5 ca-certificates
@@ -18,4 +20,4 @@ RUN apt-get purge -y wget; \
 COPY --from=builder /target/release/ramiel /usr/local/bin/ramiel
 COPY ./wasmtime-cache.toml .
 
-CMD ["ramiel"]
+CMD ["ramiel", "--hostname", "0.0.0.0"]

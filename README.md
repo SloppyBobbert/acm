@@ -29,16 +29,28 @@ cd acm
 Initialize the database:
 
 ```sh
-echo "DATABASE_URL=sqlite://./sqlite.db" > .env
+cp .env.example .env
 touch db.sqlite
 ```
 
-Build the frontend automatically on changes
+For local frontend environment variables:
+
+```sh
+cp lilith/.env.local.example lilith/.env.local
+```
+
+To start the API, build runner, and frontend together:
+
+```sh
+./scripts/dev-local.sh
+```
+
+Build the frontend automatically on changes:
 
 ```sh
 cd lilith
-yarn install
-yarn run dev
+corepack yarn install
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8081 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8081/ws corepack yarn dev
 ```
 
 Then run the server:
@@ -53,3 +65,14 @@ And finally run the build server.
 cargo run --package ramiel
 ```
 
+### Docker
+
+The Ramiel image uses the amd64 WASI SDK package. On Apple Silicon, build and run
+the local Docker images with `--platform linux/amd64`. Disable provenance for
+local builds so Docker can run the tagged images with the requested platform:
+
+```sh
+docker build --provenance=false --platform linux/amd64 -f Dockerfile.server -t acm-server:local .
+docker build --provenance=false --platform linux/amd64 -f Dockerfile.ramiel -t acm-ramiel:local .
+docker run --pull=never --platform linux/amd64 acm-ramiel:local
+```

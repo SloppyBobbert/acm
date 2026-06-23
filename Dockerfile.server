@@ -1,8 +1,10 @@
-FROM rustlang/rust:nightly AS builder
+ARG ACM_DOCKER_PLATFORM=linux/amd64
+
+FROM --platform=$ACM_DOCKER_PLATFORM rust:1.92-bullseye AS builder
 COPY . .
 RUN cargo build --release --package server
 
-FROM debian:bullseye-slim AS runtime
+FROM --platform=$ACM_DOCKER_PLATFORM debian:bullseye-slim AS runtime
 
 RUN apt-get update; \
     apt-get install -y openssl ca-certificates; \
@@ -10,4 +12,4 @@ RUN apt-get update; \
 
 COPY --from=builder /target/release/server /usr/local/bin/server
 
-CMD ["server"]
+CMD ["server", "--hostname", "0.0.0.0"]

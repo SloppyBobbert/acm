@@ -318,7 +318,7 @@ impl WasmFunctionCall {
         store.add_fuel(ARG_ALLOC_FUEL_DEFAULT)?;
         let start_fuel = store.fuel_consumed().unwrap_or(0);
 
-        let init = instance.get_typed_func(&mut store, "_initialize")?;
+        let init = instance.get_typed_func::<_, ()>(&mut store, "_initialize")?;
         init.call(&mut store, ())?;
 
         for arg in self.arguments {

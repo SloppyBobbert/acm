@@ -85,6 +85,11 @@ async fn main() {
         }
     };
 
+    if let Err(e) = sqlx::migrate!("../../migrations").run(&pool).await {
+        log::error!("Migration error: {e:?}");
+        exit(1);
+    }
+
     // Spawn job queue thread
     {
         log::info!("Spawning worker thread");
@@ -159,11 +164,6 @@ async fn main() {
                 tokio::time::sleep(Duration::new(30, 0)).await;
             }
         });
-    }
-
-    if let Err(e) = sqlx::migrate!("../../migrations").run(&pool).await {
-        log::error!("Migration error: {e:?}");
-        exit(1);
     }
 
     let addr = SocketAddr::new(args.hostname.parse().unwrap(), args.port);
