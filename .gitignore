@@ -1,6 +1,9 @@
 /target
 /dist
 .env
+.env.local
+/lilith/.env.local
+.local/
 db.sqlite
 db.sqlite-shm
 db.sqlite-wal

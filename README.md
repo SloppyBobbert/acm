@@ -29,8 +29,20 @@ cd acm
 Initialize the database:
 
 ```sh
-echo "DATABASE_URL=sqlite://./db.sqlite" > .env
+cp .env.example .env
 touch db.sqlite
+```
+
+For local frontend environment variables:
+
+```sh
+cp lilith/.env.local.example lilith/.env.local
+```
+
+To start the API, build runner, and frontend together:
+
+```sh
+./scripts/dev-local.sh
 ```
 
 Build the frontend automatically on changes:
