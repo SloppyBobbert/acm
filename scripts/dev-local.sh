@@ -44,6 +44,11 @@ trap cleanup EXIT INT TERM
 echo "Building server and Ramiel..."
 (cd "$ROOT_DIR" && cargo build -p server -p ramiel)
 
+if [[ ! -d "$ROOT_DIR/lilith/node_modules" ]]; then
+    echo "Installing frontend dependencies..."
+    (cd "$ROOT_DIR/lilith" && corepack yarn install --frozen-lockfile)
+fi
+
 echo "Starting Ramiel at http://$RAMIEL_HOSTNAME:$RAMIEL_PORT"
 (cd "$ROOT_DIR" && "$ROOT_DIR/target/debug/ramiel" \
     --hostname "$RAMIEL_HOSTNAME" \

@@ -4,7 +4,6 @@ import useSWR from "swr";
 import Footer from "../components/footer";
 import Navbar from "../components/navbar";
 import ProblemView from "../components/problem";
-// import ProblemView from "../components/problem";
 import { CompetitionGrid } from "./competitions";
 import { api_url, fetcher } from "../utils/fetcher";
 
@@ -25,7 +24,18 @@ function FeaturedProblemView(): JSX.Element {
 
     const featuredProblem = data?.[0];
 
-    if (error || !featuredProblem) {
+    if (error) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center gap-2 bg-white dark:bg-black p-8 text-center">
+                <h2 className="text-2xl font-bold">Could not load featured problem</h2>
+                <p className="max-w-md text-neutral-600 dark:text-neutral-400">
+                    Check that the API is running and reachable from the frontend.
+                </p>
+            </div>
+        );
+    }
+
+    if (!featuredProblem) {
         return (
             <div className="h-full flex flex-col items-center justify-center gap-2 bg-white dark:bg-black p-8 text-center">
                 <h2 className="text-2xl font-bold">No featured problem yet</h2>
