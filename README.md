@@ -76,7 +76,3 @@ docker build --provenance=false --platform linux/amd64 -f Dockerfile.server -t a
 docker build --provenance=false --platform linux/amd64 -f Dockerfile.ramiel -t acm-ramiel:local .
 docker run --pull=never --platform linux/amd64 acm-ramiel:local
 ```
-
-## Planned Features
-
-- Import openly licensed Kattis/ICPC or DMOJ-style problem packages into the existing problem database. Imported packages should include reuse permission, statements, starter code, reference solutions, and hidden tests. Do not mirror LeetCode statements or tests without explicit permission.
