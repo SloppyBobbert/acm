@@ -9,14 +9,12 @@ edition = "2021"
 anyhow.workspace = true
 axum-extra = { version = "0.4", features = ["cookie"] }
 axum.workspace = true
-bcrypt.workspace = true
 chrono.workspace = true
 clap.workspace = true
 futures.workspace = true
 jsonwebtoken.workspace = true
 log.workspace = true
 once_cell.workspace = true
-rand.workspace = true
 regex.workspace = true
 reqwest.workspace = true
 thiserror.workspace = true
