@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT datetime('now') < end\n        FROM competitions\n        JOIN problems\n        WHERE competitions.id = problems.competition_id\n        AND problems.id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "datetime('now') < end",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0e859355a3acaafd23648dbee85b55dbb80d56e417f63e68bc1e5de21a2bb9f8"
+}

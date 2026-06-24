@@ -43,7 +43,7 @@ pub async fn edit(
         form.description,
         form.meeting_time
     )
-    .fetch_one(&mut tx)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|_| ServerError::InternalError)?
     .id;
@@ -64,7 +64,7 @@ pub async fn edit(
             activity.description,
             activity.activity_type
         )
-        .execute(&mut tx)
+        .execute(&mut *tx)
         .await
         .map_err(|_| ServerError::InternalError)?;
     }

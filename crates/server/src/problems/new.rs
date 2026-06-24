@@ -74,7 +74,7 @@ pub async fn new(
     .bind(form.publish_time)
     .bind(form.runtime_multiplier)
     .bind(form.competition_id)
-    .fetch_one(&mut tx)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|e| {
         log::error!("{e}");
@@ -102,7 +102,7 @@ pub async fn new(
             expected_output_string,
             test.max_fuel
         )
-        .execute(&mut tx)
+        .execute(&mut *tx)
         .await
         .map_err(|e| {
             log::error!("{e}");

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE submissions\n        SET success = false,\n            error = 'Manually overridden by officer'\n        WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "184aa15ead1271c38756d47e03a5370b018625c4ce8e08cd41f15aeed63e2ad8"
+}

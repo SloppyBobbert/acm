@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT user_id\n        FROM team_members\n        JOIN teams ON teams.id = team_members.team_id\n        WHERE user_id = ? AND competition_id = (SELECT competition_id FROM teams WHERE team_id = ?)\n    ",
+  "describe": {
+    "columns": [
+      {
+        "name": "user_id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "808daa7e5caf4d37ab0e417b18018f44ebe4807330d950075d919301bd590b6c"
+}

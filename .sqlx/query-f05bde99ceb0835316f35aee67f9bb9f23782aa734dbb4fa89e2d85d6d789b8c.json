@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        DELETE FROM team_members\n        WHERE id IN (\n            SELECT team_members.id\n            FROM team_members\n            JOIN teams ON teams.id = team_members.team_id\n            WHERE team_members.user_id = ? AND teams.competition_id = ?\n        )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "f05bde99ceb0835316f35aee67f9bb9f23782aa734dbb4fa89e2d85d6d789b8c"
+}

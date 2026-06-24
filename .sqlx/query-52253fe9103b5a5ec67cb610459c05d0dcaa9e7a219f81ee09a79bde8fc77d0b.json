@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            users.id,\n            users.name,\n            users.username,\n            users.discord_id,\n            users.auth as \"auth: Auth\"\n        FROM teams\n        JOIN team_members ON teams.id = team_members.team_id\n        JOIN users ON team_members.user_id = users.id\n        WHERE teams.id = ?\n    ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "username",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "discord_id",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "auth: Auth",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "52253fe9103b5a5ec67cb610459c05d0dcaa9e7a219f81ee09a79bde8fc77d0b"
+}
