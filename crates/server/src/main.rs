@@ -36,27 +36,27 @@ pub static JOB_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub static PROCESSING_JOB: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None)]
 struct Args {
-    #[clap(short, env, long, default_value_t = 8081)]
+    #[arg(short, env, long, default_value_t = 8081)]
     port: u16,
 
-    #[clap(short, long, env, default_value = "127.0.0.1")]
+    #[arg(short, long, env, default_value = "127.0.0.1")]
     hostname: String,
 
-    #[clap(long, env, default_value = "./db.sqlite")]
+    #[arg(long, env, default_value = "./db.sqlite")]
     database_url: String,
 
-    #[clap(long, env, default_value = "http://127.0.0.1:8082")]
+    #[arg(long, env, default_value = "http://127.0.0.1:8082")]
     ramiel_url: String,
 
-    #[clap(long, env, default_value = "1")]
+    #[arg(long, env, default_value = "1")]
     parallel_job_count: u8,
 
-    #[clap(env)]
+    #[arg(env)]
     jwt_secret: String,
 
-    #[clap(env)]
+    #[arg(env)]
     discord_secret: String,
 }
 

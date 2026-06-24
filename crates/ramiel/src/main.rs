@@ -72,12 +72,12 @@ async fn cplusplus_custom_input(
 }
 
 #[derive(Parser)]
-#[clap(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None)]
 struct Args {
-    #[clap(short, env, long, default_value_t = 8082)]
+    #[arg(short, env, long, default_value_t = 8082)]
     port: u16,
 
-    #[clap(short, long, env, default_value = "127.0.0.1")]
+    #[arg(short, long, env, default_value = "127.0.0.1")]
     hostname: String,
 }
 
