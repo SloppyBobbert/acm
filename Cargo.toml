@@ -33,7 +33,7 @@ tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.3.0", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-validator = { version = "0.15", features = ["derive"] }
+validator = "0.20"
 wasmtime = "7"
 sqlx = { version = "0.6", features = [
     "runtime-tokio-rustls",
