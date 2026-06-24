@@ -19,7 +19,6 @@ serde_json.workspace = true
 shared = { path = "../shared" }
 thiserror.workspace = true
 tokio.workspace = true
-wasi-common = "7"
 wasm_memory = { path = "../wasm_memory" }
-wasmtime-wasi = "7"
+wasmtime-wasi = "44.0.3"
 wasmtime.workspace = true

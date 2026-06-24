@@ -5,12 +5,15 @@ use shared::models::{
     runner::{CustomInputResponse, RunnerError, RunnerResponse},
     test::{Test, TestResult},
 };
-use std::collections::BTreeSet;
-use wasi_common::pipe::WritePipe;
+use std::{collections::BTreeSet, path::Path};
 use wasm_memory::{FunctionValue, WasmFunctionCall};
 
-use wasmtime::{Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder};
-use wasmtime_wasi::{sync::WasiCtxBuilder, WasiCtx};
+use wasmtime::{Cache, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder};
+use wasmtime_wasi::{
+    p1::{add_to_linker_sync, WasiP1Ctx},
+    p2::pipe::MemoryOutputPipe,
+    WasiCtxBuilder,
+};
 
 mod cplusplus;
 
@@ -68,7 +71,7 @@ impl Into<RunnerResponse> for TestResults {
 
 struct MyState {
     limits: StoreLimits,
-    wasi: WasiCtx,
+    wasi: WasiP1Ctx,
 }
 
 /// Runs a command with a specified input, returning a RuntimeError if the process returns an
@@ -114,30 +117,26 @@ async fn run_command(
     task::spawn_blocking(move || {
         let mut config = Config::default();
         config.consume_fuel(true);
-        config
-            .cache_config_load("./wasmtime-cache.toml")
+        let cache = Cache::from_file(Some(Path::new("./wasmtime-cache.toml")))
             .expect("Failed to load cache configuration");
+        config.cache(Some(cache));
 
         let engine = Engine::new(&config).expect("Failed to create engine");
 
         let mut linker = Linker::new(&engine);
-        wasmtime_wasi::add_to_linker(&mut linker, |state: &mut MyState| &mut state.wasi).map_err(
-            |e| {
-                log::error!("add_to_linker: {e}");
-                RunnerError::InternalServerError {
-                    message: "Failed to add wasi runtime to linker".to_string(),
-                }
-            },
-        )?;
+        add_to_linker_sync(&mut linker, |state: &mut MyState| &mut state.wasi).map_err(|e| {
+            log::error!("add_to_linker: {e}");
+            RunnerError::InternalServerError {
+                message: "Failed to add wasi runtime to linker".to_string(),
+            }
+        })?;
 
-        let stdout = WritePipe::new_in_memory();
+        let stdout = MemoryOutputPipe::new(MAX_MEMORY);
 
         let mut store = Store::new(
             &engine,
             MyState {
-                wasi: WasiCtxBuilder::new()
-                    .stdout(Box::new(stdout.clone()))
-                    .build(),
+                wasi: WasiCtxBuilder::new().stdout(stdout.clone()).build_p1(),
                 limits: StoreLimitsBuilder::new()
                     .memory_size(MAX_MEMORY)
                     .instances(2)
@@ -146,8 +145,8 @@ async fn run_command(
         );
 
         store
-            .add_fuel(fuel.unwrap_or(MAX_FUEL) as u64)
-            .expect("Failed to add fuel");
+            .set_fuel(fuel.unwrap_or(MAX_FUEL) as u64)
+            .expect("Failed to set fuel");
         store.limiter(|state| &mut state.limits);
 
         // Instantiate our module with the imports we've created, and run it.
@@ -159,7 +158,10 @@ async fn run_command(
         })?;
 
         const FUEL_DEFAULT: u64 = 100_000_000_000;
-        store.add_fuel(FUEL_DEFAULT).expect("Failed to add fuel");
+        let fuel_before_initialize = store.get_fuel().expect("Failed to get fuel");
+        store
+            .set_fuel(fuel_before_initialize + FUEL_DEFAULT)
+            .expect("Failed to set fuel");
 
         linker
             .module(&mut store, "", &module)
@@ -174,16 +176,18 @@ async fn run_command(
             }
         })?;
 
-        let consumed_for_initialize = store.fuel_consumed().unwrap_or(0);
+        let fuel_after_initialize = store.get_fuel().expect("Failed to get fuel");
+        let consumed_for_initialize = fuel_before_initialize + FUEL_DEFAULT - fuel_after_initialize;
+        let leftover_initialize_fuel = FUEL_DEFAULT - consumed_for_initialize;
         store
-            .consume_fuel(FUEL_DEFAULT - consumed_for_initialize)
-            .expect("Failed consuming fuel");
+            .set_fuel(fuel_after_initialize - leftover_initialize_fuel)
+            .expect("Failed setting fuel");
 
         let result = input.call(&mut store, &instance);
 
         drop(store);
 
-        let bytes = stdout.try_into_inner().unwrap().into_inner();
+        let bytes = stdout.contents();
         let output = String::from_utf8_lossy(&bytes).to_string();
 
         match result {

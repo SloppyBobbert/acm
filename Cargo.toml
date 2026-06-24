@@ -32,7 +32,7 @@ tower-http = { version = "0.3.0", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 validator = "0.20"
-wasmtime = "7"
+wasmtime = "44.0.3"
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio-rustls",
     "sqlite",
