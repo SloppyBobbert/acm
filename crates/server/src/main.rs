@@ -41,7 +41,7 @@ struct Args {
     #[arg(short, env, long, default_value_t = 8081)]
     port: u16,
 
-    #[arg(short, long, env, default_value = "127.0.0.1")]
+    #[arg(long, env, default_value = "127.0.0.1")]
     hostname: String,
 
     #[arg(long, env, default_value = "./db.sqlite")]
