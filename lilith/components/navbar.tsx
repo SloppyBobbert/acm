@@ -130,6 +130,10 @@ export default function Navbar(): JSX.Element {
           Competitions
         </NavbarLink>
 
+        <NavbarLink className={hiddenStyle} href="/meetings">
+          Meetings
+        </NavbarLink>
+
         {(user && (user.auth == "OFFICER" || user.auth == "ADMIN")) && <NavbarLink className={hiddenStyle} href="/dashboard">
           Dashboard
         </NavbarLink>}

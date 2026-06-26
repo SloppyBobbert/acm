@@ -133,6 +133,15 @@ function ListLoading(): JSX.Element {
     );
 }
 
+function EmptyProblemResults({ title, description }: { title: string, description: string }): JSX.Element {
+    return (
+        <div className="sm:rounded-md border-neutral-300 dark:border-neutral-700 border-y sm:border sm:mx-2 md:m-0 bg-white dark:bg-black p-6 text-center">
+            <h2 className="text-2xl font-bold">{title}</h2>
+            <p className="mt-2 text-neutral-600 dark:text-neutral-400">{description}</p>
+        </div>
+    );
+}
+
 export function ProblemList({ problems, show_team_status, show_difficulty }: { problems: Problem[], show_team_status?: boolean, show_difficulty?: boolean }): JSX.Element {
     return (
         <>
@@ -169,6 +178,15 @@ function ProblemSearchResults({ query }: { query: string }) {
         </ErrorBox>
     );
 
+    if (problems && problems.length === 0) {
+        return (
+            <EmptyProblemResults
+                title="No matching problems"
+                description="Try a different search or clear the filters to see more local problems."
+            />
+        );
+    }
+
     if (problems) {
         return <ProblemList problems={problems} />;
     } else {
@@ -192,14 +210,23 @@ function ProblemInfiniteResults({ difficulty, showCompetitionProblems, sortBy }:
         </ErrorBox>
     );
 
+    const isEmpty = !!data && data.length > 0 && data[0].length === 0;
+
     return <>
+        {isEmpty && (
+            <EmptyProblemResults
+                title="No problems yet"
+                description="Add a local problem or adjust the filters to populate this list."
+            />
+        )}
+
         {!data ? <ListLoading /> : data.map((problems, i) => <ProblemList key={i} problems={problems} />)}
 
-        <LoadingButton
+        {!isEmpty && <LoadingButton
             loading={isValidating}
             className="rounded-full bg-neutral-200 hover:bg-neutral-300 px-6 py-3 transition-colors mx-auto dark:hover:bg-neutral-700 dark:bg-neutral-800"
             onClick={() => setSize(size + 1)}
-        >Load more</LoadingButton>
+        >Load more</LoadingButton>}
     </>;
 }
 
@@ -229,12 +256,17 @@ const ProblemListPage: NextPage = () => {
 
             <div className="max-w-screen-md mx-auto my-4 flex flex-col gap-4">
                 <div className="grid grid-cols-5 gap-4 items-center justify-center">
-                    <button onClick={() => setShowFilters(!showFilters)} className="col-end-2 mr-auto bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 hover:bg-neutral-200 px-4 py-2 rounded-full transition-colors">
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        aria-expanded={showFilters}
+                        aria-controls="problem-filters"
+                        className="col-end-2 mr-auto bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-700 hover:bg-neutral-200 px-4 py-2 rounded-full transition-colors"
+                    >
                         Filters
                     </button>
 
                     <div className="col-start-2 col-end-5 focus-within:outline focus-within:outline-2 focus-within:border-neutral-200 focus-within:outline-neutral-200 border-neutral-100 dark:border-neutral-800 border rounded-full bg-white dark:bg-black dark:text-white overflow-hidden h-10 flex">
-                        <input className="outline-0 w-full ml-4 h-full dark:bg-black" value={query} onChange={e => setQuery(e.target.value)} />
+                        <input aria-label="Search problems" className="outline-0 w-full ml-4 h-full dark:bg-black" value={query} onChange={e => setQuery(e.target.value)} />
 
                         <div className="h-10 aspect-square inline-flex items-center justify-center">
                             <svg className="w-4 dark:fill-white dark:stroke-white" enableBackground="new 0 0 32 32" id="Glyph" version="1.1" viewBox="0 0 32 32"><path d="M27.414,24.586l-5.077-5.077C23.386,17.928,24,16.035,24,14c0-5.514-4.486-10-10-10S4,8.486,4,14  s4.486,10,10,10c2.035,0,3.928-0.614,5.509-1.663l5.077,5.077c0.78,0.781,2.048,0.781,2.828,0  C28.195,26.633,28.195,25.367,27.414,24.586z M7,14c0-3.86,3.14-7,7-7s7,3.14,7,7s-3.14,7-7,7S7,17.86,7,14z" id="XMLID_223_" /></svg>
@@ -250,48 +282,48 @@ const ProblemListPage: NextPage = () => {
                     )}
                 </div>
 
-                {showFilters && <div className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4 flex flex-col gap-4 sm:flex-row sm:gap-24">
-                    <div className="flex flex-col">
-                        <span className="font-bold mb-2">Difficulty</span>
+                {showFilters && <div id="problem-filters" className="bg-neutral-100 dark:bg-neutral-800 rounded-xl p-4 flex flex-col gap-4 sm:flex-row sm:gap-24">
+                    <fieldset className="flex flex-col">
+                        <legend className="font-bold mb-2">Difficulty</legend>
 
                         <div className="flex items-center gap-2">
-                            <input id="easy" type="checkbox" value={difficulty & 1} onChange={() => setDifficulty(difficulty ^ 1)} />
+                            <input id="easy" type="checkbox" checked={(difficulty & 1) !== 0} onChange={() => setDifficulty(difficulty ^ 1)} />
                             <label htmlFor="easy">Easy</label>
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <input id="medium" type="checkbox" value={difficulty & 2} onChange={() => setDifficulty(difficulty ^ 2)} />
+                            <input id="medium" type="checkbox" checked={(difficulty & 2) !== 0} onChange={() => setDifficulty(difficulty ^ 2)} />
                             <label htmlFor="medium">Medium</label>
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <input id="hard" type="checkbox" value={difficulty & 4} onChange={() => setDifficulty(difficulty ^ 4)} />
-                            <label htmlFor="medium">Hard</label>
+                            <input id="hard" type="checkbox" checked={(difficulty & 4) !== 0} onChange={() => setDifficulty(difficulty ^ 4)} />
+                            <label htmlFor="hard">Hard</label>
                         </div>
-                    </div>
+                    </fieldset>
 
-                    <div>
-                        <span className="font-bold">Misc</span>
+                    <fieldset>
+                        <legend className="font-bold">Misc</legend>
 
                         <div className="flex items-center gap-2">
-                            <input type="checkbox" name="time" checked={showCompetitionProblems} onChange={() => setShowCompetitionProblems(!showCompetitionProblems)} />
-                            Show competition problems
+                            <input id="show-competition-problems" type="checkbox" name="time" checked={showCompetitionProblems} onChange={() => setShowCompetitionProblems(!showCompetitionProblems)} />
+                            <label htmlFor="show-competition-problems">Show competition problems</label>
                         </div>
-                    </div>
+                    </fieldset>
 
-                    <div>
-                        <span className="font-bold">Sort By</span>
+                    <fieldset>
+                        <legend className="font-bold">Sort By</legend>
 
                         <div className="flex items-center gap-2">
                             <input id="newest" type="radio" name="sort-by" checked={sortBy == "Newest"} onChange={() => setSortBy("Newest")} />
-                            <label htmlFor="oldest">Newest</label>
+                            <label htmlFor="newest">Newest</label>
                         </div>
 
                         <div className="flex items-center gap-2">
                             <input id="oldest" type="radio" name="sort-by" checked={sortBy == "Oldest"} onChange={() => setSortBy("Oldest")} />
                             <label htmlFor="oldest">Oldest</label>
                         </div>
-                    </div>
+                    </fieldset>
                 </div>}
 
                 {query === ""

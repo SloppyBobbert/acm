@@ -59,6 +59,18 @@ const Leaderboard: NextPage = () => {
     );
   }
 
+  function EmptyLeaderboard(): JSX.Element {
+    return (
+      <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
+        <h2 className="text-2xl font-bold">No leaderboard entries yet</h2>
+        <p className="max-w-md text-neutral-600 dark:text-neutral-400">
+          First-place finishes will show up here once local users start solving
+          problems.
+        </p>
+      </div>
+    );
+  }
+
   if (error) return <div>Failed to load</div>;
 
   return (
@@ -77,6 +89,8 @@ const Leaderboard: NextPage = () => {
             ? Array(3)
               .fill(0)
               .map((_, i) => <LoadingLeaderboardEntry key={i} />)
+            : data.length === 0
+              ? <EmptyLeaderboard />
             : data.map((entry, i) => (
               <LeaderboardEntry key={i} index={i + 1} {...entry} />
             ))}

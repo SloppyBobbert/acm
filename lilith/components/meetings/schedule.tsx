@@ -4,13 +4,15 @@ import { api_url, fetcher } from "../../utils/fetcher";
 import Link from "next/link";
 import { timeFormat } from "../../utils/time";
 import { useEffect, useState } from "react";
-import { useStore } from "../../utils/state";
+import { User } from "../../utils/state";
 
 export default function Schedule(): JSX.Element {
   const { data, error } = useSWR<Meeting[]>(api_url("/meetings"), fetcher);
+  const { data: user } = useSWR<User>(api_url("/user/me"), fetcher, {
+    shouldRetryOnError: false,
+  });
   const [isComponentMounted, setIsComponentMounted] = useState(false);
-  // const auth = useStore((state) => state.user?.auth);
-  const auth = "OFFICER";
+  const auth = user?.auth;
   useEffect(() => setIsComponentMounted(true), []);
 
   function LoadingScheduleItem(): JSX.Element {

@@ -24,7 +24,26 @@ function CompetitionListItem({ id, name, start }: Competition): JSX.Element {
   );
 }
 
-export function CompetitionGrid(): JSX.Element {
+function EmptyCompetitions({ canCreate }: { canCreate: boolean }): JSX.Element {
+  return (
+    <div className="border-y md:border md:rounded-md border-neutral-300 bg-white dark:bg-black dark:border-neutral-700 px-6 py-10 text-center">
+      <h2 className="text-2xl font-bold">No competitions yet</h2>
+      <p className="mt-2 text-neutral-600 dark:text-neutral-400">
+        Add a local competition to see it listed here.
+      </p>
+
+      {canCreate && (
+        <Link href="/competitions/new">
+          <a className="inline-flex mt-4 text-green-50 text-sm font-bold rounded-full bg-green-700 hover:bg-green-500 transition-colors px-4 py-2">
+            Create Competition
+          </a>
+        </Link>
+      )}
+    </div>
+  );
+}
+
+export function CompetitionGrid({ canCreate = false }: { canCreate?: boolean }): JSX.Element {
   const { data, error } = useSWR<Competition[]>(api_url("/competitions"), fetcher);
 
   if (error)
@@ -32,6 +51,9 @@ export function CompetitionGrid(): JSX.Element {
 
   if (!data)
     return <></>;
+
+  if (data.length === 0)
+    return <EmptyCompetitions canCreate={canCreate} />;
 
   return (
     <div className="grid md:grid-cols-2 gap-4">
@@ -48,6 +70,8 @@ const CompetitionsPage: NextPage = () => {
     shouldRetryOnError: false,
   });
 
+  const canCreate = !!user && (user.auth === "OFFICER" || user.auth === "ADMIN");
+
   return (
     <>
       <Navbar />
@@ -60,7 +84,7 @@ const CompetitionsPage: NextPage = () => {
         <div className="flex">
           <h1 className="text-3xl font-extrabold ml-4 md:ml-0">Competitions</h1>
 
-          {user && (user.auth === "OFFICER" || user.auth === "ADMIN") && (
+          {canCreate && (
             <Link href="/competitions/new">
               <a className="ml-auto text-green-50 text-sm font-bold rounded-full bg-green-700 hover:bg-green-500 transition-colors px-4 py-2 mr-4 md:mr-0">
                 New Competition
@@ -69,7 +93,7 @@ const CompetitionsPage: NextPage = () => {
           )}
         </div>
 
-        <CompetitionGrid />
+        <CompetitionGrid canCreate={canCreate} />
       </div>
     </>
   );
