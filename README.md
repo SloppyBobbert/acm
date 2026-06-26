@@ -33,6 +33,14 @@ cp .env.example .env
 touch db.sqlite
 ```
 
+The migrations create the schema only. To add sample content for local UI
+development, run the optional seed script after the API has run migrations once:
+
+```sh
+./scripts/dev-local.sh
+./scripts/seed-local-db.sh
+```
+
 For local frontend environment variables:
 
 ```sh
