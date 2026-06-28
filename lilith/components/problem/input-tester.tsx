@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { ProblemIDContext } from ".";
 import { api_url, fetcher } from "../../utils/fetcher";
 import { JobStatus, monitorJob } from "../../utils/job";
+import { getResponseError } from "../../utils/request-error";
 import { useSession, useStore } from "../../utils/state";
 import ErrorBox from "../error-box";
 import LoadingButton from "../loading-button";
@@ -60,6 +61,12 @@ export default function InputTester() {
                 }),
             });
 
+            if (!res.ok) {
+                setResultError(await getResponseError(res));
+                setTestResult(null);
+                return;
+            }
+
             let job: JobStatus<CustomInputResponse, string> = await res.json();
 
             let [data, err] = await monitorJob(job, (n) => setQueuePosition(n));
@@ -75,7 +82,6 @@ export default function InputTester() {
             }
         }
         catch (e) {
-            console.log(e);
             setError("Network error.", true);
         }
         finally {

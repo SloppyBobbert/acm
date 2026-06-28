@@ -3,6 +3,7 @@ import { useSWRConfig } from "swr";
 import { ProblemIDContext } from ".";
 import { api_url } from "../../utils/fetcher";
 import { JobStatus, monitorJob } from "../../utils/job";
+import { getResponseError } from "../../utils/request-error";
 import { Submission, useSession, useStore } from "../../utils/state";
 import EditorPreferences from "../editor-preferences";
 import LoadingButton from "../loading-button";
@@ -46,8 +47,12 @@ export default function CodeRunner(): JSX.Element {
                     }),
                 });
 
+                if (!res.ok) {
+                    setError(await getResponseError(res), true);
+                    return;
+                }
+
                 let job: JobStatus<Submission, string> = await res.json();
-                console.log(job);
                 let [data, err] = await monitorJob(job, (n) => setQueuePosition(n));
 
                 if (data) {
@@ -58,7 +63,6 @@ export default function CodeRunner(): JSX.Element {
                 }
 
                 if (err) {
-                    console.log(`${err}`)
                     setError(err, true);
                 }
             }

@@ -80,7 +80,7 @@ VALUES
     (
         1,
         1,
-        1,
+        0,
         '{"name":"solve","arguments":[{"Int":{"Single":1}}],"return_type":{"Int":"Single"}}',
         '{"Int":{"Single":2}}',
         1000000000,
@@ -89,7 +89,7 @@ VALUES
     (
         2,
         1,
-        2,
+        1,
         '{"name":"solve","arguments":[{"Int":{"Single":41}}],"return_type":{"Int":"Single"}}',
         '{"Int":{"Single":42}}',
         1000000000,
@@ -98,12 +98,18 @@ VALUES
     (
         3,
         2,
-        1,
+        0,
         '{"name":"solve","arguments":[{"Int":{"Single":6}}],"return_type":{"Int":"Single"}}',
         '{"Int":{"Single":12}}',
         1000000000,
         false
     );
+
+-- Keep previously seeded local databases aligned with the zero-based test
+-- numbers expected by the problem console.
+UPDATE tests SET test_number = 0 WHERE id = 1;
+UPDATE tests SET test_number = 1 WHERE id = 2;
+UPDATE tests SET test_number = 0 WHERE id = 3;
 
 INSERT OR IGNORE INTO submissions (id, problem_id, user_id, success, runtime, code, complexity)
 VALUES
