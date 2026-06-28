@@ -120,5 +120,8 @@ VALUES
         true,
         1200,
         'int solve(int x) { return x + 1; }',
-        'O(1)'
+        'CONSTANT'
     );
+
+-- Keep previously seeded local databases aligned with the backend enum value.
+UPDATE submissions SET complexity = 'CONSTANT' WHERE id = 1;
