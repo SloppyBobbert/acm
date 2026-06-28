@@ -13,9 +13,14 @@ import Modal from "../../components/modal";
 import { isServerError, ServerError } from "../../components/problem/submission/error";
 import Head from "next/head";
 
+const discordOauthUrl = process.env.NODE_ENV == "development"
+    ? "https://discord.com/api/oauth2/authorize?client_id=984742374112624690&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fdiscord&response_type=code&scope=identify"
+    : "https://discord.com/api/oauth2/authorize?client_id=984742374112624690&redirect_uri=https%3A%2F%2Fchicoacm.org%2Fauth%2Fdiscord&response_type=code&scope=identify";
+
 function TeamDisplay({ id }: { id: number }) {
+    const competitionId = useContext(CompetitionIDContext);
     const { data: team, error: _error } = useSWR<Team>(
-        api_url(`/competitions/0/teams/${id}`),
+        api_url(`/competitions/${competitionId}/teams/${id}`),
         fetcher
     );
 
@@ -182,6 +187,11 @@ function TeamUser({ id, username, name }: User): JSX.Element {
 function TeamJoiner(): JSX.Element {
     const competition_id = useContext(CompetitionIDContext);
     const [shown, setShown] = useState(false);
+    const { data: user, error: _userError } = useSWR<User>(
+        api_url("/user/me"),
+        fetcher, {
+        shouldRetryOnError: false,
+    });
 
     const { data, error: __error } = useSWR<Team[]>(
         api_url(`/competitions/${competition_id}/teams/joinable`),
@@ -191,7 +201,7 @@ function TeamJoiner(): JSX.Element {
 
     function JoinableTeamEntry({ id, name, members }: Team): JSX.Element {
         const join_team = async () => {
-            await fetch(api_url(`/competitions/${id}/teams/join`), {
+            await fetch(api_url(`/competitions/${competition_id}/teams/join`), {
                 method: "POST",
                 credentials: "include",
                 headers: {
@@ -224,6 +234,9 @@ function TeamJoiner(): JSX.Element {
 
     if (!data) return <></>;
 
+    const loggedOut = !user;
+    const hasJoinableTeams = data.length > 0;
+
     return (
         <div className="flex flex-col gap-2">
             <button
@@ -232,8 +245,32 @@ function TeamJoiner(): JSX.Element {
 
             <Modal shown={shown} onClose={() => setShown(false)}>
                 <div className="bg-white border-neutral-300 rounded-md border overflow-hidden dark:border-neutral-700">
-                    <h1 className="border-b border-neutral-300 p-4 w-full font-bold bg-neutral-50 dark:bg-neutral-800 dark:border-neutral-700">Click on a team to join it!</h1>
-                    {data.map((team, i) => <JoinableTeamEntry key={i} {...team} />)}
+                    <h1 className="border-b border-neutral-300 p-4 w-full font-bold bg-neutral-50 dark:bg-neutral-800 dark:border-neutral-700">
+                        {loggedOut ? "Log in to register" : "Click on a team to join it!"}
+                    </h1>
+
+                    {loggedOut ? (
+                        <div className="p-4 flex flex-col gap-4 dark:bg-black">
+                            <p className="text-sm text-neutral-700 dark:text-neutral-300">
+                                Log in with Discord before you join a team or create one for this competition.
+                            </p>
+
+                            <div>
+                                <a
+                                    href={discordOauthUrl}
+                                    className="inline-flex items-center rounded-full bg-[#5865F2] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#6f7af2]"
+                                >
+                                    Log in with Discord
+                                </a>
+                            </div>
+                        </div>
+                    ) : hasJoinableTeams ? (
+                        data.map((team, i) => <JoinableTeamEntry key={i} {...team} />)
+                    ) : (
+                        <div className="p-4 text-sm text-neutral-700 dark:bg-black dark:text-neutral-300">
+                            No teams are available to join yet.
+                        </div>
+                    )}
                 </div>
             </Modal>
         </div>
