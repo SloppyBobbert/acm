@@ -2,6 +2,7 @@ import produce from "immer";
 import { NextPage } from "next";
 import dynamic from "next/dynamic";
 import Head from "next/head";
+import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState } from "react";
 import useSWR from "swr";
@@ -13,7 +14,7 @@ import TestsEditor from "../../components/problem-editor/tests-editor";
 import { FunctionValue, FunctionTypeDisplay, FunctionType } from "../../components/problem/submission/tests";
 import Tabbed from "../../components/tabbed";
 import { api_url, fetcher } from "../../utils/fetcher";
-import { useAdminStore, useSession, useStore } from "../../utils/state";
+import { useAdminStore, useSession, User } from "../../utils/state";
 import { Competition } from "../competitions";
 const Editor = dynamic(import("../../components/editor"), { ssr: false });
 
@@ -300,6 +301,11 @@ function SubmitButton(): JSX.Element {
 }
 
 const ProblemEditorPage: NextPage = () => {
+    const { data: user, error } = useSWR<User>(api_url("/user/me"), fetcher, {
+        shouldRetryOnError: false,
+    });
+    const canCreate = !!user && (user.auth === "OFFICER" || user.auth === "ADMIN");
+
     return (
         <div className="grid grid-rows-min-full grid-cols-full w-screen h-screen">
             <Navbar />
@@ -308,26 +314,43 @@ const ProblemEditorPage: NextPage = () => {
                 <title>Problem Editor</title>
             </Head>
 
-            <div className="flex flex-col gap-2 lg:gap-0 lg:grid lg:grid-cols-[450px_minmax(0,1fr)] lg:grid-rows-full-min">
-                <div className="grid grid-rows-min-full grid-cols-full gap-2 lg:gap-0 lg:border-r border-neutral-300 dark:border-neutral-700 row-span-2">
-                    <TitleEditor />
-                    <DescriptionEditor />
+            {!user && !error ? (
+                <div className="flex flex-1 items-center justify-center px-4">
+                    <div className="text-center text-neutral-600 dark:text-neutral-400">Checking permissions...</div>
                 </div>
-
-                <Tabbed
-                    className="border-y border-neutral-300 dark:border-neutral-700 lg:border-0"
-                    titles={["Template", "Tests"]}
-                >
-                    <TemplateEditor />
-                    <TestsEditor />
-                </Tabbed>
-
-                <div className="border-t border-neutral-300 dark:border-neutral-700 flex flex-col items-center lg:bg-white dark:lg:bg-black lg:flex-row">
-                    <Scheduler />
-                    <CompetitionPicker />
-                    <SubmitButton />
+            ) : !canCreate ? (
+                <div className="flex flex-1 items-center justify-center px-4">
+                    <div className="flex max-w-md flex-col items-center gap-4 rounded-md border border-neutral-300 bg-white px-6 py-8 text-center dark:border-neutral-700 dark:bg-black">
+                        <p className="text-neutral-700 dark:text-neutral-300">Log in as an officer or admin to create problems.</p>
+                        <Link href="/problems">
+                            <a className="rounded-full bg-neutral-900 px-4 py-2 text-sm text-neutral-50 transition-colors hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300">
+                                Back to Problems
+                            </a>
+                        </Link>
+                    </div>
                 </div>
-            </div>
+            ) : (
+                <div className="flex flex-col gap-2 lg:gap-0 lg:grid lg:grid-cols-[450px_minmax(0,1fr)] lg:grid-rows-full-min">
+                    <div className="grid grid-rows-min-full grid-cols-full gap-2 lg:gap-0 lg:border-r border-neutral-300 dark:border-neutral-700 row-span-2">
+                        <TitleEditor />
+                        <DescriptionEditor />
+                    </div>
+
+                    <Tabbed
+                        className="border-y border-neutral-300 dark:border-neutral-700 lg:border-0"
+                        titles={["Template", "Tests"]}
+                    >
+                        <TemplateEditor />
+                        <TestsEditor />
+                    </Tabbed>
+
+                    <div className="border-t border-neutral-300 dark:border-neutral-700 flex flex-col items-center lg:bg-white dark:lg:bg-black lg:flex-row">
+                        <Scheduler />
+                        <CompetitionPicker />
+                        <SubmitButton />
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

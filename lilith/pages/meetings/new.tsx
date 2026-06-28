@@ -1,10 +1,12 @@
 import { NextPage } from "next";
+import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
+import useSWR from "swr";
 import { shallow } from "zustand/shallow";
 import Navbar from "../../components/navbar";
-import { api_url } from "../../utils/fetcher";
-import { useAdminStore, useSession, useStore } from "../../utils/state";
+import { api_url, fetcher } from "../../utils/fetcher";
+import { useAdminStore, useSession, User } from "../../utils/state";
 
 export interface Activity {
   title: string,
@@ -89,6 +91,10 @@ const MeetingEditor: NextPage = () => {
   useEffect(() => setIsComponentMounted(true), []);
   const setError = useSession((state) => state.setError);
   const router = useRouter();
+  const { data: user, error } = useSWR<User>(api_url("/user/me"), fetcher, {
+    shouldRetryOnError: false,
+  });
+  const canCreate = !!user && (user.auth === "OFFICER" || user.auth === "ADMIN");
 
   const submit = async () => {
     try {
@@ -179,20 +185,37 @@ const MeetingEditor: NextPage = () => {
     <>
       <Navbar />
 
-      <div className="max-w-screen-md mx-auto my-2 flex flex-col gap-2">
-        <div className="flex items-center mx-2 md:m-0">
-          <h1 className="text-2xl font-bold">{"New Meeting"}</h1>
-          <button onClick={submit} className="ml-auto bg-green-700 hover:bg-green-500 text-green-50 transition-colors rounded-full px-4 py-2 text-sm">{"Submit"}</button>
+      {!user && !error ? (
+        <div className="max-w-screen-md mx-auto my-2 px-4 text-neutral-600 dark:text-neutral-400">
+          Checking permissions...
         </div>
-
-        <div className="bg-white dark:bg-black border-y md:border border-neutral-300 dark:border-neutral-700 p-2 md:rounded-md grid grid-cols-2 gap-2">
-          <TitleForm />
-          <TimeForm />
-          <DescriptionForm />
+      ) : !canCreate ? (
+        <div className="max-w-screen-md mx-auto my-6 px-4">
+          <div className="flex flex-col items-center gap-4 rounded-md border border-neutral-300 bg-white px-6 py-8 text-center dark:border-neutral-700 dark:bg-black">
+            <p className="text-neutral-700 dark:text-neutral-300">Log in as an officer or admin to create meetings.</p>
+            <Link href="/meetings">
+              <a className="rounded-full bg-neutral-900 px-4 py-2 text-sm text-neutral-50 transition-colors hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300">
+                Back to Meetings
+              </a>
+            </Link>
+          </div>
         </div>
+      ) : (
+        <div className="max-w-screen-md mx-auto my-2 flex flex-col gap-2">
+          <div className="flex items-center mx-2 md:m-0">
+            <h1 className="text-2xl font-bold">{"New Meeting"}</h1>
+            <button onClick={submit} className="ml-auto bg-green-700 hover:bg-green-500 text-green-50 transition-colors rounded-full px-4 py-2 text-sm">{"Submit"}</button>
+          </div>
 
-        {isComponentMounted && <ActivitiesEditor />}
-      </div>
+          <div className="bg-white dark:bg-black border-y md:border border-neutral-300 dark:border-neutral-700 p-2 md:rounded-md grid grid-cols-2 gap-2">
+            <TitleForm />
+            <TimeForm />
+            <DescriptionForm />
+          </div>
+
+          {isComponentMounted && <ActivitiesEditor />}
+        </div>
+      )}
     </>
   );
 }
