@@ -34,10 +34,12 @@ touch db.sqlite
 ```
 
 The migrations create the schema only. To add sample content for local UI
-development, run the optional seed script after the API has run migrations once:
+development, start the local stack and wait for the API to run migrations. Then
+run the optional seed script from another terminal:
 
 ```sh
 ./scripts/dev-local.sh
+# In another terminal, after migrations finish:
 ./scripts/seed-local-db.sh
 ```
 

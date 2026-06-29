@@ -107,9 +107,23 @@ VALUES
 
 -- Keep previously seeded local databases aligned with the zero-based test
 -- numbers expected by the problem console.
-UPDATE tests SET test_number = 0 WHERE id = 1;
-UPDATE tests SET test_number = 1 WHERE id = 2;
-UPDATE tests SET test_number = 0 WHERE id = 3;
+UPDATE tests
+SET test_number = 0
+WHERE id = 1
+    AND problem_id = 1
+    AND input = '{"name":"solve","arguments":[{"Int":{"Single":1}}],"return_type":{"Int":"Single"}}';
+
+UPDATE tests
+SET test_number = 1
+WHERE id = 2
+    AND problem_id = 1
+    AND input = '{"name":"solve","arguments":[{"Int":{"Single":41}}],"return_type":{"Int":"Single"}}';
+
+UPDATE tests
+SET test_number = 0
+WHERE id = 3
+    AND problem_id = 2
+    AND input = '{"name":"solve","arguments":[{"Int":{"Single":6}}],"return_type":{"Int":"Single"}}';
 
 INSERT OR IGNORE INTO submissions (id, problem_id, user_id, success, runtime, code, complexity)
 VALUES
@@ -124,4 +138,9 @@ VALUES
     );
 
 -- Keep previously seeded local databases aligned with the backend enum value.
-UPDATE submissions SET complexity = 'CONSTANT' WHERE id = 1;
+UPDATE submissions
+SET complexity = 'CONSTANT'
+WHERE id = 1
+    AND problem_id = 1
+    AND user_id = 1
+    AND code = 'int solve(int x) { return x + 1; }';

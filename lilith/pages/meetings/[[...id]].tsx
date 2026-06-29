@@ -3,11 +3,30 @@ import { MeetingContext, Meeting } from "../../components/meetings";
 import Activities from "../../components/meetings/activities";
 import useSWR from "swr";
 import { NextPage } from "next";
-import { api_url, fetcher } from "../../utils/fetcher";
+import { api_url } from "../../utils/fetcher";
 import Schedule from "../../components/meetings/schedule";
 import MeetingView from "../../components/meetings/meeting";
 import { useRouter } from "next/router";
-import Error from "next/error";
+import NextError from "next/error";
+
+type MeetingFetchError = Error & {
+  status?: number;
+};
+
+async function fetchMeeting(url: string): Promise<Meeting> {
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const error = new Error("failed to make request") as MeetingFetchError;
+    error.status = res.status;
+    throw error;
+  }
+
+  return await res.json();
+}
 
 function EmptyMeetingState(): JSX.Element {
   return (
@@ -22,16 +41,24 @@ function EmptyMeetingState(): JSX.Element {
 
 const Meetings: NextPage = () => {
   const { query, isReady } = useRouter();
-  const hasExplicitMeetingId = query.id !== undefined;
-  const id = Array.isArray(query.id) ? query.id[0] : query.id ?? "next";
-  const isBaseMeetingsRoute = isReady && !hasExplicitMeetingId;
+  const meetingIdSegments = Array.isArray(query.id)
+    ? query.id
+    : query.id
+      ? [query.id]
+      : [];
+  const hasInvalidMeetingPath = isReady && meetingIdSegments.length > 1;
+  const id = meetingIdSegments[0] ?? "next";
+  const isBaseMeetingsRoute = isReady && meetingIdSegments.length === 0;
 
-  const { data: meeting, error } = useSWR<Meeting>(
-    isReady ? api_url(`/meetings/${id}`) : null,
-    fetcher
+  const { data: meeting, error } = useSWR<Meeting, MeetingFetchError>(
+    isReady && !hasInvalidMeetingPath ? api_url(`/meetings/${id}`) : null,
+    fetchMeeting
   );
 
-  if (error && !isBaseMeetingsRoute) return <Error statusCode={404} />;
+  if (hasInvalidMeetingPath) return <NextError statusCode={404} />;
+  if (error && (!isBaseMeetingsRoute || error.status !== 404)) {
+    return <NextError statusCode={error.status ?? 500} />;
+  }
 
   return (
     <MeetingContext.Provider value={meeting}>
