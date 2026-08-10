@@ -35,6 +35,8 @@ pub const MAX_TEST_LENGTH: usize = 500;
 pub static JOB_COUNTER: AtomicU64 = AtomicU64::new(0);
 pub static PROCESSING_JOB: AtomicU64 = AtomicU64::new(0);
 
+async fn healthz() {}
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -170,6 +172,7 @@ async fn main() {
     tracing::info!("Started server on {addr}");
 
     let app = Router::new()
+        .route("/healthz", get(healthz))
         .nest("/auth", auth::routes())
         .nest("/competitions", competitions::routes())
         .nest("/leaderboard", leaderboard::routes())

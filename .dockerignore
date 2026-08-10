@@ -5,6 +5,7 @@ target
 db.sqlite*
 .env
 .env.local
+/deploy/.env.production
 *.bk
 node_modules
 lilith/node_modules

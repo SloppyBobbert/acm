@@ -1,0 +1,3 @@
+{$API_DOMAIN} {
+    reverse_proxy server:8081
+}

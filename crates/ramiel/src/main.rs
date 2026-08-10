@@ -6,12 +6,17 @@ use shared::models::{
     test::Test,
 };
 
-use actix_web::{middleware::Logger, post, web, web::Json, App, HttpServer};
+use actix_web::{get, middleware::Logger, post, web, web::Json, App, HttpResponse, HttpServer};
 
 mod runners;
 
 use clap::Parser;
 use runners::{CPlusPlus, Runner};
+
+#[get("/healthz")]
+async fn healthz() -> HttpResponse {
+    HttpResponse::Ok().finish()
+}
 
 #[post("/run/c++")]
 async fn cplusplus_run(form: Json<SubmitJob>) -> Json<Result<RunnerResponse, RunnerError>> {
@@ -94,6 +99,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(Logger::default())
             .app_data(json_cfg.clone())
+            .service(healthz)
             .service(cplusplus_run)
             .service(cplusplus_generate_tests)
             .service(cplusplus_custom_input)

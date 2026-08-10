@@ -1,0 +1,35 @@
+# Production deployment
+
+The frontend stays on Vercel. Set `NEXT_PUBLIC_API_URL=https://api.example.com` and `NEXT_PUBLIC_WS_URL=wss://api.example.com/ws`, replacing `api.example.com` with the API domain served by this VM. This stack is Caddy -> server -> Ramiel; only Caddy exposes ports 80 and 443.
+
+## VM setup
+
+1. Assign the VM a DNS label or domain, then create an A/AAAA record for the API hostname.
+2. Copy `deploy/.env.production.example` to `deploy/.env.production`. Set `API_DOMAIN`, generate a long random `JWT_SECRET`, and set the Discord client secret. Keep this file out of source control.
+3. Create the SQLite data directory from `ACM_DATA_DIR` before starting. The example uses `mkdir -p .local/production-data`.
+4. Start and inspect the stack:
+
+   ```sh
+   docker compose --env-file deploy/.env.production -f compose.production.yml up -d --build
+   docker compose --env-file deploy/.env.production -f compose.production.yml ps
+   docker compose --env-file deploy/.env.production -f compose.production.yml logs -f caddy server ramiel
+   ```
+
+5. Update the Discord application's redirect URL to use the production frontend/API flow before enabling sign-in.
+
+Caddy's health check uses `caddy adapt` to parse the mounted Caddyfile with the container's `API_DOMAIN`. It does not perform DNS lookups or TLS handshakes, unlike a live HTTPS request.
+
+## SQLite backup
+
+Stop the server before copying the database and its WAL files, then restart it:
+
+```sh
+set -a
+. deploy/.env.production
+set +a
+docker compose --env-file deploy/.env.production -f compose.production.yml stop server
+cp "$ACM_DATA_DIR/db.sqlite" /safe/backup/db.sqlite
+cp "$ACM_DATA_DIR/db.sqlite-wal" /safe/backup/db.sqlite-wal 2>/dev/null || true
+cp "$ACM_DATA_DIR/db.sqlite-shm" /safe/backup/db.sqlite-shm 2>/dev/null || true
+docker compose --env-file deploy/.env.production -f compose.production.yml start server
+```

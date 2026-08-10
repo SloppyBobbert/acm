@@ -1,15 +1,22 @@
 ARG ACM_DOCKER_PLATFORM=linux/amd64
 
 FROM --platform=$ACM_DOCKER_PLATFORM rust:1.92-bullseye AS builder
+ARG TARGETARCH
+WORKDIR /app
+
 COPY . .
-RUN cargo build --release --package server
+RUN --mount=type=cache,id=cargo-registry-rust-1.92-${TARGETARCH},target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=cargo-git-rust-1.92-${TARGETARCH},target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=acm-target-rust-1.92-${TARGETARCH},target=/app/target,sharing=locked \
+    cargo build --release --locked --package server && \
+    cp /app/target/release/server /tmp/server
 
 FROM --platform=$ACM_DOCKER_PLATFORM debian:bullseye-slim AS runtime
 
-RUN apt-get update; \
-    apt-get install -y openssl ca-certificates; \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openssl ca-certificates curl && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /target/release/server /usr/local/bin/server
+COPY --from=builder /tmp/server /usr/local/bin/server
 
 CMD ["server", "--hostname", "0.0.0.0"]

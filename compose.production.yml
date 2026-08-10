@@ -1,0 +1,94 @@
+services:
+  caddy:
+    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: "${API_DOMAIN:?API_DOMAIN must be set}"
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - edge
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "caddy", "adapt", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  server:
+    image: acm-server:production
+    platform: ${ACM_DOCKER_PLATFORM:-linux/amd64}
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      args:
+        ACM_DOCKER_PLATFORM: ${ACM_DOCKER_PLATFORM:-linux/amd64}
+    restart: unless-stopped
+    environment:
+      API_HOSTNAME: 0.0.0.0
+      PORT: 8081
+      DATABASE_URL: sqlite:///var/lib/acm/db.sqlite?mode=rwc
+      RAMIEL_URL: http://ramiel:8082
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set}"
+      DISCORD_SECRET: "${DISCORD_SECRET:?DISCORD_SECRET must be set}"
+      PARALLEL_JOB_COUNT: ${PARALLEL_JOB_COUNT:-1}
+    volumes:
+      - ${ACM_DATA_DIR:-./.local/production-data}:/var/lib/acm
+    depends_on:
+      ramiel:
+        condition: service_healthy
+    networks:
+      - edge
+      - runner
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8081/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    cpus: "1.0"
+    mem_limit: 512m
+
+  ramiel:
+    image: acm-ramiel:production
+    build:
+      context: .
+      dockerfile: Dockerfile.ramiel
+      args:
+        ACM_DOCKER_PLATFORM: linux/amd64
+    platform: linux/amd64
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,exec,nosuid,nodev,size=512m,mode=1777
+    networks:
+      - runner
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8082/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    cpus: "2.0"
+    mem_limit: 2g
+    pids_limit: 256
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  edge:
+  runner:
+    internal: true
