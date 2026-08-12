@@ -7,10 +7,14 @@ use std::{
 };
 use tokio::sync::{broadcast, mpsc, RwLock};
 
-use axum::{routing::get, Extension, Router, Server};
+use axum::{
+    http::{self, header::CONTENT_TYPE, HeaderValue, Method},
+    routing::get,
+    Extension, Router, Server,
+};
 use clap::Parser;
 use sqlx::SqlitePool;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::{
     problems::{Difficulty, Problem},
@@ -37,6 +41,123 @@ pub static PROCESSING_JOB: AtomicU64 = AtomicU64::new(0);
 
 async fn healthz() {}
 
+fn frontend_origin(value: &str) -> Result<HeaderValue, String> {
+    let origin = value
+        .parse::<HeaderValue>()
+        .map_err(|_| "FRONTEND_ORIGIN must be a valid HTTP origin".to_string())?;
+    let uri = value
+        .parse::<http::Uri>()
+        .map_err(|_| "FRONTEND_ORIGIN must be a valid HTTP origin".to_string())?;
+
+    if !matches!(uri.scheme_str(), Some("http" | "https"))
+        || uri.authority().is_none()
+        || uri.path() != "/"
+        || uri.query().is_some()
+    {
+        return Err(
+            "FRONTEND_ORIGIN must be an http(s) origin without a path or query".to_string(),
+        );
+    }
+
+    Ok(origin)
+}
+
+fn cors_layer(frontend_origin: HeaderValue) -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::exact(frontend_origin))
+        .allow_credentials(true)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([CONTENT_TYPE])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    #[test]
+    fn accepts_http_or_https_frontend_origins() {
+        assert_eq!(
+            frontend_origin("http://127.0.0.1:3000").unwrap(),
+            "http://127.0.0.1:3000"
+        );
+        assert_eq!(
+            frontend_origin("https://acm.example.com").unwrap(),
+            "https://acm.example.com"
+        );
+    }
+
+    #[test]
+    fn rejects_non_origin_frontend_values() {
+        assert!(frontend_origin("not an origin").is_err());
+        assert!(frontend_origin("https://acm.example.com/path").is_err());
+        assert!(frontend_origin("ftp://acm.example.com").is_err());
+    }
+
+    #[tokio::test]
+    async fn cors_allows_only_the_configured_origin() {
+        let app = Router::new()
+            .route("/", get(|| async { StatusCode::NO_CONTENT }))
+            .layer(cors_layer(
+                frontend_origin("https://acm.example.com").unwrap(),
+            ));
+
+        let accepted = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/")
+                    .header("Origin", "https://acm.example.com")
+                    .header("Access-Control-Request-Method", "POST")
+                    .header("Access-Control-Request-Headers", "content-type")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(accepted.status(), StatusCode::OK);
+        assert_eq!(
+            accepted
+                .headers()
+                .get("access-control-allow-origin")
+                .unwrap(),
+            "https://acm.example.com"
+        );
+
+        let rejected = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::OPTIONS)
+                    .uri("/")
+                    .header("Origin", "https://untrusted.example.com")
+                    .header("Access-Control-Request-Method", "POST")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            rejected
+                .headers()
+                .get("access-control-allow-origin")
+                .unwrap(),
+            "https://untrusted.example.com"
+        );
+    }
+}
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -60,11 +181,21 @@ struct Args {
 
     #[arg(env)]
     discord_secret: String,
+
+    #[arg(env)]
+    frontend_origin: String,
+
+    #[arg(env, value_parser = clap::value_parser!(bool))]
+    cookie_secure: bool,
 }
 
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+    let frontend_origin = frontend_origin(&args.frontend_origin).unwrap_or_else(|error| {
+        eprintln!("Invalid FRONTEND_ORIGIN: {error}");
+        exit(2);
+    });
 
     tracing_subscriber::fmt()
         .with_env_filter("info,tower_http=debug,sqlx=warn")
@@ -187,7 +318,8 @@ async fn main() {
         .layer(Extension(pool))
         .layer(Extension(broadcast))
         .layer(Extension(job_queue))
-        .layer(CorsLayer::very_permissive().allow_credentials(true));
+        .layer(Extension(args.cookie_secure))
+        .layer(cors_layer(frontend_origin));
 
     Server::bind(&addr)
         .serve(app.into_make_service())

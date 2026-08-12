@@ -13,6 +13,8 @@ mod runners;
 use clap::Parser;
 use runners::{CPlusPlus, Runner};
 
+const RUN_TIMEOUT_MESSAGE: &str = "The tests took too long to run. (process killed)";
+
 #[get("/healthz")]
 async fn healthz() -> HttpResponse {
     HttpResponse::Ok().finish()
@@ -20,60 +22,45 @@ async fn healthz() -> HttpResponse {
 
 #[post("/run/c++")]
 async fn cplusplus_run(form: Json<SubmitJob>) -> Json<Result<RunnerResponse, RunnerError>> {
-    let task = tokio::spawn(async {
-        let res = Json(CPlusPlus.run_tests(form.into_inner()).await);
-        log::info!("The task wasn't cancelled!!!!!");
-        res
-    });
-
-    tokio::select! {
-        _ = tokio::time::sleep(Duration::from_secs(360)) => {
-            return Json(Err(RunnerError::TimeoutError { message: "The tests took too long to run. (process killed)".to_string() }));
-        }
-        res = task => {
-            return res.unwrap();
-        }
-    }
+    Json(
+        CPlusPlus
+            .run_tests(
+                form.into_inner(),
+                tokio::time::Instant::now() + Duration::from_secs(360),
+                RUN_TIMEOUT_MESSAGE,
+            )
+            .await,
+    )
 }
 
 #[post("/generate-tests/c++")]
 async fn cplusplus_generate_tests(
     form: Json<GenerateTestsJob>,
 ) -> Json<Result<Vec<Test>, RunnerError>> {
-    let task = tokio::spawn(async {
-        let res = Json(CPlusPlus.generate_tests(form.into_inner()).await);
-        log::info!("The task wasn't cancelled!!!!!");
-        res
-    });
-
-    tokio::select! {
-        _ = tokio::time::sleep(Duration::from_secs(120)) => {
-            return Json(Err(RunnerError::TimeoutError { message: "The tests took too long to run. (process killed)".to_string() }));
-        }
-        res = task => {
-            return res.unwrap();
-        }
-    }
+    Json(
+        CPlusPlus
+            .generate_tests(
+                form.into_inner(),
+                tokio::time::Instant::now() + Duration::from_secs(120),
+                RUN_TIMEOUT_MESSAGE,
+            )
+            .await,
+    )
 }
 
 #[post("/custom-input/c++")]
 async fn cplusplus_custom_input(
     form: Json<CustomInputJob>,
 ) -> Json<Result<CustomInputResponse, RunnerError>> {
-    let task = tokio::spawn(async {
-        let res = Json(CPlusPlus.run_custom_input(form.into_inner()).await);
-        log::info!("The task wasn't cancelled!!!!!");
-        res
-    });
-
-    tokio::select! {
-        _ = tokio::time::sleep(Duration::from_secs(60)) => {
-            return Json(Err(RunnerError::TimeoutError { message: "The tests took too long to run. (process killed)".to_string() }));
-        }
-        res = task => {
-            return res.unwrap();
-        }
-    }
+    Json(
+        CPlusPlus
+            .run_custom_input(
+                form.into_inner(),
+                tokio::time::Instant::now() + Duration::from_secs(60),
+                RUN_TIMEOUT_MESSAGE,
+            )
+            .await,
+    )
 }
 
 #[derive(Parser)]

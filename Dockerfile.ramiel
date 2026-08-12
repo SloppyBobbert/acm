@@ -17,9 +17,10 @@ WORKDIR /
 RUN apt-get update && \
     apt-get install -y --no-install-recommends openssl libxml2 wget curl libxkbcommon-x11-0 libncurses5 ca-certificates
 
-RUN wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-19/wasi-sdk_19.0_amd64.deb && \
-    dpkg -i wasi-sdk_19.0_amd64.deb && \
-    rm -f wasi-sdk_19.0_amd64.deb
+RUN wget -O /tmp/wasi-sdk_19.0_amd64.deb https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-19/wasi-sdk_19.0_amd64.deb && \
+    echo "de05c74ae8ef17c9be3022df1cb014fca3f49648a763d5486dd233f5246517f6  /tmp/wasi-sdk_19.0_amd64.deb" | sha256sum -c - && \
+    dpkg -i /tmp/wasi-sdk_19.0_amd64.deb && \
+    rm -f /tmp/wasi-sdk_19.0_amd64.deb
 
 RUN apt-get purge -y wget && \
     apt-get autoremove -y && \

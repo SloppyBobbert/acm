@@ -4,11 +4,11 @@ use shared::models::{
     runner::{CustomInputResponse, Diagnostic, DiagnosticType, RunnerError, RunnerResponse},
     test::Test,
 };
-use std::{iter::Peekable, path::Path, str::Chars};
+use std::{iter::Peekable, path::Path, process::Stdio, str::Chars};
 use tokio::{
     fs::{self, File},
     io::{AsyncReadExt, AsyncWriteExt},
-    process::Command,
+    process::{Child, Command},
 };
 
 use super::{run_command, run_test_timed, Runner, TestResults};
@@ -17,12 +17,17 @@ pub struct CPlusPlus;
 
 #[async_trait]
 impl Runner for CPlusPlus {
-    async fn run_tests(&self, form: SubmitJob) -> Result<RunnerResponse, RunnerError> {
+    async fn run_tests(
+        &self,
+        form: SubmitJob,
+        deadline: tokio::time::Instant,
+        timeout_message: &str,
+    ) -> Result<RunnerResponse, RunnerError> {
         let prefix = format!("/tmp/acm/submissions/{}/{}", form.user_id, form.problem_id);
 
         let implementation = process_file(&form.implementation);
 
-        let command = compile_problem(&prefix, &implementation).await?;
+        let command = compile_problem(&prefix, &implementation, deadline, timeout_message).await?;
 
         // MAYBE WHEN WE HAVE MORE RAM
         // let tests = join_all(
@@ -36,7 +41,7 @@ impl Runner for CPlusPlus {
         let mut tests = vec![];
         for mut test in form.tests {
             test.adjust_runtime(form.runtime_multiplier);
-            let (test, _) = run_test_timed(&command, test, 50).await?;
+            let (test, _) = run_test_timed(&command, test, 50, deadline, timeout_message).await?;
             tests.push(test);
         }
 
@@ -54,17 +59,23 @@ impl Runner for CPlusPlus {
         Ok(test_results.into())
     }
 
-    async fn generate_tests(&self, form: GenerateTestsJob) -> Result<Vec<Test>, RunnerError> {
+    async fn generate_tests(
+        &self,
+        form: GenerateTestsJob,
+        deadline: tokio::time::Instant,
+        timeout_message: &str,
+    ) -> Result<Vec<Test>, RunnerError> {
         let prefix = format!("/tmp/acm/problem_editor/{}", form.user_id);
 
         // TODO actually get unique function names from tests
         let reference = process_file(&form.reference);
-        let command = compile_problem(&prefix, &reference).await?;
+        let command = compile_problem(&prefix, &reference, deadline, timeout_message).await?;
 
         let mut outputs = Vec::new();
         let mut i = 0;
         for input in form.inputs.into_iter() {
-            let (output, _, fuel) = run_command(&command, input.clone(), None).await?;
+            let (output, _, fuel) =
+                run_command(&command, input.clone(), None, deadline, timeout_message).await?;
             outputs.push(Test {
                 id: 0,
                 index: i,
@@ -82,6 +93,8 @@ impl Runner for CPlusPlus {
     async fn run_custom_input(
         &self,
         form: CustomInputJob,
+        deadline: tokio::time::Instant,
+        timeout_message: &str,
     ) -> Result<CustomInputResponse, RunnerError> {
         let reference_prefix = format!(
             "/tmp/acm/custom_input/{}/{}/reference",
@@ -98,12 +111,24 @@ impl Runner for CPlusPlus {
         // println!("REFERENCE: {reference}");
         // println!("IMPLEMENTATION: {implementation}");
 
-        let reference_command = compile_problem(&reference_prefix, &reference).await?;
-        let implementation_command =
-            compile_problem(&implementation_prefix, &implementation).await?;
+        let reference_command =
+            compile_problem(&reference_prefix, &reference, deadline, timeout_message).await?;
+        let implementation_command = compile_problem(
+            &implementation_prefix,
+            &implementation,
+            deadline,
+            timeout_message,
+        )
+        .await?;
 
-        let (expected_output, _, fuel) =
-            run_command(&reference_command, form.input.clone(), None).await?;
+        let (expected_output, _, fuel) = run_command(
+            &reference_command,
+            form.input.clone(),
+            None,
+            deadline,
+            timeout_message,
+        )
+        .await?;
 
         let mut test = Test {
             id: 0,
@@ -116,7 +141,14 @@ impl Runner for CPlusPlus {
         test.adjust_runtime(form.runtime_multiplier);
 
         // we add a lot of padding so they can potentially print a lot
-        let (test_result, stdout) = run_test_timed(&implementation_command, test, 500).await?;
+        let (test_result, stdout) = run_test_timed(
+            &implementation_command,
+            test,
+            500,
+            deadline,
+            timeout_message,
+        )
+        .await?;
 
         Ok(CustomInputResponse {
             result: test_result,
@@ -137,7 +169,16 @@ fn process_file(file: &str) -> String {
     new_file
 }
 
-async fn compile_problem(prefix: &str, implementation: &str) -> Result<String, RunnerError> {
+async fn compile_problem(
+    prefix: &str,
+    implementation: &str,
+    deadline: tokio::time::Instant,
+    timeout_message: &str,
+) -> Result<String, RunnerError> {
+    if tokio::time::Instant::now() >= deadline {
+        return Err(timeout_error(timeout_message));
+    }
+
     let wasm_filename = format!("{prefix}/out.wasm");
     let implementation_filename = format!("{prefix}/implementation.cpp");
 
@@ -159,14 +200,29 @@ async fn compile_problem(prefix: &str, implementation: &str) -> Result<String, R
         }
     }
 
+    if tokio::time::Instant::now() >= deadline {
+        return Err(timeout_error(timeout_message));
+    }
     fs::create_dir_all(prefix).await?;
 
+    if tokio::time::Instant::now() >= deadline {
+        return Err(timeout_error(timeout_message));
+    }
     File::create(&implementation_filename)
         .await?
         .write_all(implementation.as_bytes())
         .await?;
 
-    let output = Command::new("/opt/wasi-sdk/bin/clang++")
+    if tokio::time::Instant::now() >= deadline {
+        return Err(timeout_error(timeout_message));
+    }
+
+    let mut command = Command::new("/opt/wasi-sdk/bin/clang++");
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
         .args([
             "-O3",
             "-Wl,--no-entry",
@@ -184,9 +240,15 @@ async fn compile_problem(prefix: &str, implementation: &str) -> Result<String, R
             &implementation_filename,
             "-o",
             &wasm_filename,
-        ])
-        .output()
-        .await?;
+        ]);
+    let mut child = command.spawn()?;
+    let output = match wait_for_child(&mut child, deadline).await? {
+        Some(output) => output,
+        None => {
+            fs::remove_file(&wasm_filename).await.ok();
+            return Err(timeout_error(timeout_message));
+        }
+    };
 
     if !output.status.success() {
         fs::remove_file(&wasm_filename).await.ok();
@@ -197,6 +259,54 @@ async fn compile_problem(prefix: &str, implementation: &str) -> Result<String, R
     }
 
     Ok(wasm_filename)
+}
+
+struct ChildOutput {
+    status: std::process::ExitStatus,
+    stderr: Vec<u8>,
+}
+
+async fn wait_for_child(
+    child: &mut Child,
+    deadline: tokio::time::Instant,
+) -> std::io::Result<Option<ChildOutput>> {
+    let mut stderr = child.stderr.take().expect("stderr must be piped");
+    let mut output = Vec::new();
+
+    let completed = {
+        let wait_and_drain = async {
+            let (status, _) = tokio::try_join!(child.wait(), stderr.read_to_end(&mut output))?;
+            Ok::<_, std::io::Error>(status)
+        };
+        tokio::pin!(wait_and_drain);
+        tokio::select! {
+            biased;
+            result = &mut wait_and_drain => Some(result?),
+            _ = tokio::time::sleep_until(deadline) => None,
+        }
+    };
+
+    if let Some(status) = completed {
+        return Ok(Some(ChildOutput {
+            status,
+            stderr: output,
+        }));
+    }
+
+    match child.start_kill() {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {}
+        Err(error) => return Err(error),
+    }
+    child.wait().await?;
+    stderr.read_to_end(&mut output).await?;
+    Ok(None)
+}
+
+fn timeout_error(message: &str) -> RunnerError {
+    RunnerError::TimeoutError {
+        message: message.to_string(),
+    }
 }
 
 fn parse_number(iter: &mut Peekable<Chars>) -> usize {
@@ -287,4 +397,81 @@ fn parse_cplusplus_error(err: String) -> RunnerError {
     }
 
     RunnerError::CompilationError { diagnostics }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    #[tokio::test]
+    async fn subprocess_helper_collects_stderr_after_normal_completion() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "printf diagnostic >&2"]);
+        command.stderr(Stdio::piped()).kill_on_drop(true);
+        let mut child = command.spawn().unwrap();
+
+        let output = wait_for_child(
+            &mut child,
+            tokio::time::Instant::now() + Duration::from_secs(1),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert!(output.status.success());
+        assert_eq!(output.stderr, b"diagnostic");
+    }
+
+    #[tokio::test]
+    async fn subprocess_helper_reaps_timed_out_child_before_returning() {
+        let marker_path = std::env::temp_dir().join(format!(
+            "ramiel-timeout-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let script = format!(
+            "printf ready > '{}'; while :; do :; done; printf survived > '{}.after'",
+            marker_path.display(),
+            marker_path.display()
+        );
+        let mut command = Command::new("sh");
+        command.args(["-c", &script]);
+        command.stderr(Stdio::piped()).kill_on_drop(true);
+        let mut child = command.spawn().unwrap();
+
+        while tokio::fs::metadata(&marker_path).await.is_err() {
+            tokio::task::yield_now().await;
+        }
+        assert!(wait_for_child(&mut child, tokio::time::Instant::now())
+            .await
+            .unwrap()
+            .is_none());
+        assert!(child.try_wait().unwrap().is_some());
+        assert!(
+            tokio::fs::metadata(format!("{}.after", marker_path.display()))
+                .await
+                .is_err()
+        );
+        tokio::fs::remove_file(marker_path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn subprocess_helper_prefers_completed_child_over_expired_deadline() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "exit 0"]);
+        command.stderr(Stdio::piped()).kill_on_drop(true);
+        let mut child = command.spawn().unwrap();
+        child.wait().await.unwrap();
+
+        let output = wait_for_child(&mut child, tokio::time::Instant::now())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(output.status.success());
+    }
 }

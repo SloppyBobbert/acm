@@ -38,12 +38,18 @@ services:
       RAMIEL_URL: http://ramiel:8082
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set}"
       DISCORD_SECRET: "${DISCORD_SECRET:?DISCORD_SECRET must be set}"
+      FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:?FRONTEND_ORIGIN must be set}"
+      COOKIE_SECURE: "${COOKIE_SECURE:?COOKIE_SECURE must be set}"
       PARALLEL_JOB_COUNT: ${PARALLEL_JOB_COUNT:-1}
     volumes:
       - ${ACM_DATA_DIR:-./.local/production-data}:/var/lib/acm
     depends_on:
       ramiel:
         condition: service_healthy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     networks:
       - edge
       - runner
