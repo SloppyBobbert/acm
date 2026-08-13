@@ -64,7 +64,9 @@ fn frontend_origin(value: &str) -> Result<HeaderValue, String> {
 
 fn cors_layer(frontend_origin: HeaderValue) -> CorsLayer {
     CorsLayer::new()
-        .allow_origin(AllowOrigin::exact(frontend_origin))
+        .allow_origin(AllowOrigin::predicate(move |origin, _request_parts| {
+            origin == frontend_origin
+        }))
         .allow_credentials(true)
         .allow_methods([
             Method::GET,
@@ -148,13 +150,10 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_ne!(
-            rejected
-                .headers()
-                .get("access-control-allow-origin")
-                .unwrap(),
-            "https://untrusted.example.com"
-        );
+        assert!(rejected
+            .headers()
+            .get("access-control-allow-origin")
+            .is_none());
     }
 }
 

@@ -71,6 +71,9 @@ services:
         ACM_DOCKER_PLATFORM: linux/amd64
     platform: linux/amd64
     restart: unless-stopped
+    init: true
+    environment:
+      WASMTIME_CACHE_CONFIG: /wasmtime-cache.toml
     cap_drop:
       - ALL
     security_opt:

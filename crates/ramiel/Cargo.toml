@@ -12,6 +12,7 @@ async-trait = "0.1"
 clap.workspace = true
 env_logger = { version = "0.11", default-features = false }
 log.workspace = true
+libc = "0.2"
 futures.workspace = true
 md5 = "0.8"
 serde.workspace = true

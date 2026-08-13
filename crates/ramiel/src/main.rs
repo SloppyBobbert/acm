@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{path::PathBuf, time::Duration};
 
 use shared::models::{
     forms::{CustomInputJob, GenerateTestsJob, SubmitJob},
@@ -11,7 +11,7 @@ use actix_web::{get, middleware::Logger, post, web, web::Json, App, HttpResponse
 mod runners;
 
 use clap::Parser;
-use runners::{CPlusPlus, Runner};
+use runners::{CPlusPlus, Runner, WasmRuntime};
 
 const RUN_TIMEOUT_MESSAGE: &str = "The tests took too long to run. (process killed)";
 
@@ -21,9 +21,12 @@ async fn healthz() -> HttpResponse {
 }
 
 #[post("/run/c++")]
-async fn cplusplus_run(form: Json<SubmitJob>) -> Json<Result<RunnerResponse, RunnerError>> {
+async fn cplusplus_run(
+    runner: web::Data<CPlusPlus>,
+    form: Json<SubmitJob>,
+) -> Json<Result<RunnerResponse, RunnerError>> {
     Json(
-        CPlusPlus
+        runner
             .run_tests(
                 form.into_inner(),
                 tokio::time::Instant::now() + Duration::from_secs(360),
@@ -35,10 +38,11 @@ async fn cplusplus_run(form: Json<SubmitJob>) -> Json<Result<RunnerResponse, Run
 
 #[post("/generate-tests/c++")]
 async fn cplusplus_generate_tests(
+    runner: web::Data<CPlusPlus>,
     form: Json<GenerateTestsJob>,
 ) -> Json<Result<Vec<Test>, RunnerError>> {
     Json(
-        CPlusPlus
+        runner
             .generate_tests(
                 form.into_inner(),
                 tokio::time::Instant::now() + Duration::from_secs(120),
@@ -50,10 +54,11 @@ async fn cplusplus_generate_tests(
 
 #[post("/custom-input/c++")]
 async fn cplusplus_custom_input(
+    runner: web::Data<CPlusPlus>,
     form: Json<CustomInputJob>,
 ) -> Json<Result<CustomInputResponse, RunnerError>> {
     Json(
-        CPlusPlus
+        runner
             .run_custom_input(
                 form.into_inner(),
                 tokio::time::Instant::now() + Duration::from_secs(60),
@@ -71,13 +76,25 @@ struct Args {
 
     #[arg(long, env, default_value = "127.0.0.1")]
     hostname: String,
+
+    #[arg(
+        long,
+        env = "WASMTIME_CACHE_CONFIG",
+        default_value = "./wasmtime-cache.toml"
+    )]
+    wasmtime_cache_config: PathBuf,
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
+fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("warn"));
     let args = Args::parse();
+    let runtime = WasmRuntime::new(&args.wasmtime_cache_config).map_err(std::io::Error::other)?;
+    let runner = CPlusPlus::new(runtime);
 
+    actix_web::rt::System::new().block_on(run_server(args, runner))
+}
+
+async fn run_server(args: Args, runner: CPlusPlus) -> std::io::Result<()> {
     let json_cfg = web::JsonConfig::default()
         // 3mb limit
         .limit(100_000_000);
@@ -86,6 +103,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(Logger::default())
             .app_data(json_cfg.clone())
+            .app_data(web::Data::new(runner.clone()))
             .service(healthz)
             .service(cplusplus_run)
             .service(cplusplus_generate_tests)
