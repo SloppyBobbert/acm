@@ -1,6 +1,9 @@
 services:
   caddy:
-    image: caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    image: acm-caddy:production
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
     restart: unless-stopped
     environment:
       API_DOMAIN: "${API_DOMAIN:?API_DOMAIN must be set}"
@@ -16,11 +19,18 @@ services:
     depends_on:
       server:
         condition: service_healthy
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent --show-error --resolve \"$${API_DOMAIN}:443:127.0.0.1\" \"https://$${API_DOMAIN}/healthz\" >/dev/null"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 60s
 
   server:
     image: acm-server:production
@@ -39,7 +49,7 @@ services:
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set}"
       DISCORD_SECRET: "${DISCORD_SECRET:?DISCORD_SECRET must be set}"
       FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:?FRONTEND_ORIGIN must be set}"
-      COOKIE_SECURE: "${COOKIE_SECURE:?COOKIE_SECURE must be set}"
+      COOKIE_SECURE: "true"
       PARALLEL_JOB_COUNT: ${PARALLEL_JOB_COUNT:-1}
     volumes:
       - ${ACM_DATA_DIR:-./.local/production-data}:/var/lib/acm
