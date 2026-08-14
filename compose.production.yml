@@ -17,7 +17,7 @@ services:
       server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "caddy", "adapt", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+      test: ["CMD-SHELL", "curl --fail --silent --show-error --resolve \"$${API_DOMAIN}:443:127.0.0.1\" \"https://$${API_DOMAIN}/healthz\" >/dev/null"]
       interval: 30s
       timeout: 5s
       retries: 3

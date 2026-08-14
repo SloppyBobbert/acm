@@ -21,6 +21,8 @@ use tokio::{
 
 use super::{run_command, run_test_timed, timeout_error, Runner, TestResults, WasmRuntime};
 
+const CACHE_VERSION: &str = "clang++-wasi-v1";
+
 #[derive(Clone)]
 pub struct CPlusPlus {
     runtime: Arc<WasmRuntime>,
@@ -274,7 +276,7 @@ async fn compile_problem(
     let wasm_filename = prefix.join("out.wasm");
     let implementation_filename = prefix.join("implementation.cpp");
     let marker_filename = prefix.join(".compile-cache-key");
-    let cache_key = format!("{:x}", md5::compute(implementation.as_bytes()));
+    let cache_key = CACHE_VERSION;
 
     if cache_matches(
         &implementation_filename,
@@ -380,7 +382,7 @@ async fn cache_matches(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(error),
     };
-    Ok(md5::compute(source) == md5::compute(implementation.as_bytes()) && marker == cache_key)
+    Ok(source == implementation.as_bytes() && marker == cache_key)
 }
 
 struct ChildOutput {
@@ -610,7 +612,7 @@ mod tests {
         let wasm = directory.join("out.wasm");
         let marker = directory.join(".compile-cache-key");
         let implementation = "processed source";
-        let key = format!("{:x}", md5::compute(implementation.as_bytes()));
+        let key = CACHE_VERSION;
         fs::write(&source, implementation).await.unwrap();
         fs::write(&wasm, b"wasm").await.unwrap();
 
@@ -837,11 +839,19 @@ mod tests {
         .unwrap()
         .is_none());
         assert!(child.try_wait().unwrap().is_some());
-        assert_eq!(unsafe { libc::kill(descendant_pid, 0) }, -1);
-        assert_eq!(
-            std::io::Error::last_os_error().raw_os_error(),
-            Some(libc::ESRCH)
-        );
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if unsafe { libc::kill(descendant_pid, 0) } == -1 {
+                    match std::io::Error::last_os_error().raw_os_error() {
+                        Some(libc::ESRCH) => return,
+                        error => panic!("unexpected descendant kill error: {error:?}"),
+                    }
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("descendant was not reaped");
         tokio::fs::remove_file(marker_path).await.unwrap();
         tokio::fs::remove_file(descendant_pid_path).await.unwrap();
     }
