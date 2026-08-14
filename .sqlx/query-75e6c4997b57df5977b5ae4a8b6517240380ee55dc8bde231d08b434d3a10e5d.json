@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            id,\n            name,\n            username,\n            discord_id,\n            auth as \"auth: Auth\"\n        FROM\n            users\n        WHERE\n            id = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "username",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "discord_id",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "auth: Auth",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "75e6c4997b57df5977b5ae4a8b6517240380ee55dc8bde231d08b434d3a10e5d"
+}

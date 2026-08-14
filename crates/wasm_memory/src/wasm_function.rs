@@ -315,8 +315,8 @@ impl WasmFunctionCall {
 
         // because we need to allocate for some args, it's possible to improperly run out of fuel
         const ARG_ALLOC_FUEL_DEFAULT: u64 = 100_000_000_000;
-        store.add_fuel(ARG_ALLOC_FUEL_DEFAULT)?;
-        let start_fuel = store.fuel_consumed().unwrap_or(0);
+        let fuel_before_arg_setup = store.get_fuel()?;
+        store.set_fuel(fuel_before_arg_setup + ARG_ALLOC_FUEL_DEFAULT)?;
 
         let init = instance.get_typed_func::<_, ()>(&mut store, "_initialize")?;
         init.call(&mut store, ())?;
@@ -341,8 +341,12 @@ impl WasmFunctionCall {
             }
         }
 
-        let consumed_for_args = store.fuel_consumed().unwrap_or(0) - start_fuel;
-        let initial_fuel = store.consume_fuel(ARG_ALLOC_FUEL_DEFAULT - consumed_for_args)?;
+        let fuel_after_arg_setup = store.get_fuel()?;
+        let consumed_for_args =
+            fuel_before_arg_setup + ARG_ALLOC_FUEL_DEFAULT - fuel_after_arg_setup;
+        let leftover_arg_fuel = ARG_ALLOC_FUEL_DEFAULT - consumed_for_args;
+        store.set_fuel(fuel_after_arg_setup - leftover_arg_fuel)?;
+        let initial_fuel = store.get_fuel()?;
 
         let mut out_params = vec![];
         match self.return_type {
@@ -366,10 +370,16 @@ impl WasmFunctionCall {
 
         for ext in &externs {
             if let Extern::Func(func) = ext {
-                let ty = func.ty(&store);
+                let ty = func.ty(&mut *store);
+                let expected_params = ty.params().collect::<Vec<_>>();
+                let expected_results = ty.results().collect::<Vec<_>>();
+                let actual_params = params
+                    .iter()
+                    .map(|param| param.ty(&mut *store))
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
 
-                if ty.params().eq(params.iter().map(Val::ty))
-                    && ty.results().eq(out_params.iter().cloned())
+                if val_types_match(&expected_params, &actual_params)
+                    && val_types_match(&expected_results, &out_params)
                 {
                     func.call(&mut store, &params, &mut results)?;
                     found_func = true;
@@ -382,7 +392,7 @@ impl WasmFunctionCall {
             return Err(FunctionError::NameNotFound(self.name.clone()).into());
         }
 
-        let remaining_fuel = store.consume_fuel(0)?;
+        let remaining_fuel = store.get_fuel()?;
 
         // If the return type is a simple singleton, we can simply take the value directly from the
         // return value. Otherwise, we must read it from memory, with the address given by the
@@ -419,4 +429,22 @@ impl WasmFunctionCall {
 
         Ok((return_value, initial_fuel - remaining_fuel))
     }
+}
+
+fn val_types_match(expected: &[ValType], actual: &[ValType]) -> bool {
+    expected.len() == actual.len()
+        && expected
+            .iter()
+            .zip(actual)
+            .all(|(expected, actual)| val_type_matches(expected, actual))
+}
+
+fn val_type_matches(expected: &ValType, actual: &ValType) -> bool {
+    matches!(
+        (expected, actual),
+        (ValType::I32, ValType::I32)
+            | (ValType::I64, ValType::I64)
+            | (ValType::F32, ValType::F32)
+            | (ValType::F64, ValType::F64)
+    )
 }

@@ -2,6 +2,7 @@
 /dist
 .env
 .env.local
+/deploy/.env.production
 /lilith/.env.local
 .local/
 db.sqlite

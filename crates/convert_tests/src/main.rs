@@ -740,13 +740,45 @@ fn star_arrangements(function_name: &str, test: OldTest) -> Result<Test> {
     })
 }
 
-async fn generate_insert_statements(
-    problem_id: i64,
-    function_name: &str,
-    conversion_function: impl Fn(&str, OldTest) -> Result<Test>,
-) {
-    println!("INSERT INTO TESTS")
-}
+type ConversionFunction = fn(&str, OldTest) -> Result<Test>;
+
+const CONVERSIONS: &[(i64, &str, ConversionFunction)] = &[
+    (15, "replicate", replicate),
+    (14, "computeC", need_for_speed),
+    (13, "maxNonadjacentSum", maximum_nonadjacent_sum),
+    (12, "treeVCSize", tree_vertex_cover),
+    (11, "permuteDigits", two_strings),
+    (10, "maxNonconsecutiveSum", vec_i32),
+    (9, "branch", convert_raw_string),
+    (8, "rainbowRoads", rainbow_roads),
+    (7, "ways", int_int),
+    (6, "treeCount", convert_raw_string),
+    (5, "deadEndDetector", convert_raw_string),
+    (4, "goodOrBad", convert_raw_string),
+    (3, "addOne", int_int),
+    (2, "fibonacci", int_int),
+    (1, "fizzBuzz", int_string),
+    (17, "delayed_work", delayed_work),
+    (18, "dominating_duos", vec_i32),
+    (20, "fear_factor", fear_factoring),
+    (23, "kth_subtree", kth_subtree),
+    (26, "mission_imporbable", mission_improbable),
+    (28, "paper_cuts", papercuts),
+    (29, "permutation", convert_raw_string),
+    (31, "rectangles", rectangles),
+    (34, "straight_shot", convert_raw_string),
+    (35, "ant_typing", string_int),
+    (16, "coloring_contention", coloring_contention),
+    (19, "excellence", vec_i32),
+    (21, "gravity", replicate),
+    (22, "forbidden_zero", int_int),
+    (24, "longest_common_subsequence", longest_common_subsequence),
+    (25, "meeting", meeting),
+    (27, "odd_palindrome", string_bool),
+    (30, "poker_hand", poker_hand),
+    (32, "runes", string_int),
+    (33, "star_arrangements", star_arrangements),
+];
 
 async fn convert_problem_tests(
     problem_id: i64,
@@ -792,44 +824,27 @@ async fn convert_problem_tests(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // convert_problem_tests(15, "replicate", Box::new(replicate)).await?; // rename solution to replicate and change to vector<vector<char>> out return type
-    // convert_problem_tests(14, "computeC", Box::new(need_for_speed)).await?;
-    // convert_problem_tests(13, "maxNonadjacentSum", Box::new(maximum_nonadjacent_sum)).await?;
-    // convert_problem_tests(12, "treeVCSize", Box::new(tree_vertex_cover)).await?;
-    // convert_problem_tests(11, "permuteDigits", Box::new(two_strings)).await?;
-    // convert_problem_tests(10, "maxNonconsecutiveSum", Box::new(vec_i32)).await?;
-    // convert_problem_tests(9, "branch", Box::new(convert_raw_string)).await?;
-    // convert_problem_tests(8, "rainbowRoads", Box::new(rainbow_roads)).await?;
-    // convert_problem_tests(7, "ways", Box::new(int_int)).await?;
-    // convert_problem_tests(6, "treeCount", Box::new(convert_raw_string)).await?;
-    // convert_problem_tests(5, "deadEndDetector", Box::new(convert_raw_string)).await?;
-    // convert_problem_tests(4, "goodOrBad", Box::new(convert_raw_string)).await?;
-    // convert_problem_tests(3, "addOne", Box::new(int_int)).await?;
-    // convert_problem_tests(2, "fibonacci", Box::new(int_int)).await?;
-    // convert_problem_tests(1, "fizzBuzz", Box::new(int_string)).await?;
-    //
-    // convert_problem_tests(17, "delayed_work", Box::new(delayed_work)).await?;
-    // convert_problem_tests(18, "dominating_duos", Box::new(vec_i32)).await?;
-    // convert_problem_tests(20, "fear_factor", Box::new(fear_factoring)).await?;
-    // convert_problem_tests(23, "kth_subtree", Box::new(kth_subtree)).await?;
-    // convert_problem_tests(26, "mission_imporbable", Box::new(mission_improbable)).await?;
-    // convert_problem_tests(28, "paper_cuts", Box::new(papercuts)).await?;
-    // convert_problem_tests(29, "permutation", Box::new(convert_raw_string)).await?;
-    // convert_problem_tests(31, "rectangles", Box::new(rectangles)).await?;
-    // convert_problem_tests(34, "straight_shot", Box::new(convert_raw_string)).await?;
-    // convert_problem_tests(35, "ant_typing", Box::new(string_int)).await?;
-    //
-    // convert_problem_tests(16, "coloring_contention", Box::new(coloring_contention)).await?;
-    // convert_problem_tests(19, "excellence", Box::new(vec_i32)).await?;
-    // convert_problem_tests(21, "gravity", Box::new(replicate)).await?; // change to vector<vector<char>> with out parameter
-    // convert_problem_tests(22, "forbidden_zero", Box::new(int_int)).await?;
-    // #[rustfmt::skip]
-    // convert_problem_tests(24, "longest_common_subsequence", Box::new(longest_common_subsequence)).await?;
-    // convert_problem_tests(25, "meeting", Box::new(meeting)).await?;
-    // convert_problem_tests(27, "odd_palindrome", Box::new(string_bool)).await?;
-    // convert_problem_tests(30, "poker_hand", Box::new(poker_hand)).await?; // change function signature to take vector<string>
-    // convert_problem_tests(32, "runes", Box::new(string_int)).await?;
-    // convert_problem_tests(33, "star_arrangements", Box::new(star_arrangements)).await?;
+    let Some(problem_id) = std::env::args().nth(1) else {
+        println!("Pass a problem id to convert one problem's tests.");
+        println!("Available conversions:");
+
+        for (problem_id, function_name, _) in CONVERSIONS {
+            println!("  {problem_id}: {function_name}");
+        }
+
+        return Ok(());
+    };
+
+    let problem_id = problem_id.parse::<i64>()?;
+    let Some((_, function_name, conversion_function)) = CONVERSIONS
+        .iter()
+        .find(|(conversion_problem_id, _, _)| *conversion_problem_id == problem_id)
+    else {
+        println!("No conversion registered for problem {problem_id}.");
+        return Ok(());
+    };
+
+    convert_problem_tests(problem_id, function_name, *conversion_function).await?;
 
     Ok(())
 }

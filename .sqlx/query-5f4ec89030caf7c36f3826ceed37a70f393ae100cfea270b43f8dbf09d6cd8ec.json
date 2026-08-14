@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT datetime('now') < end FROM competitions WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "datetime('now') < end",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5f4ec89030caf7c36f3826ceed37a70f393ae100cfea270b43f8dbf09d6cd8ec"
+}

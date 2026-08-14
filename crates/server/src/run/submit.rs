@@ -145,7 +145,7 @@ impl Queueable for SubmitJob {
         .bind(&self.implementation)
         .bind(now)
         .bind(complexity)
-        .fetch_one(&mut tx)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| {
             log::error!("error inserting submission: {e}");
@@ -173,7 +173,7 @@ impl Queueable for SubmitJob {
                 test.error,
                 test.success,
             )
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await
             .map_err(|e| {
                 log::error!("error inserting test: {e}");

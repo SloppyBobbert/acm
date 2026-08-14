@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE problems SET\n        title = ?,\n        description = ?,\n        difficulty = ?,\n        visible = ?,\n        template = ?,\n        runtime_multiplier = ?\n        WHERE id = ?\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "802c06313ec2af4c1aaf6ccdbf42b4712d840a663f23af980f52861b01d82f88"
+}

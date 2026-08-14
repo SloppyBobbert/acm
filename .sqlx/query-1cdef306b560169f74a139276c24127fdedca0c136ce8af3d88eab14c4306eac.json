@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE submissions\n        SET success = true,\n            error = NULL\n        WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "1cdef306b560169f74a139276c24127fdedca0c136ce8af3d88eab14c4306eac"
+}

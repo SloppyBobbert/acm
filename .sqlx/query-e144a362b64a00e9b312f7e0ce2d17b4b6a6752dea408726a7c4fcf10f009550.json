@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT COUNT(DISTINCT(problem_id)) AS count\n        FROM users\n        JOIN submissions ON users.id = submissions.user_id\n        WHERE success = true\n        AND users.id = ?;\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "count",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e144a362b64a00e9b312f7e0ce2d17b4b6a6752dea408726a7c4fcf10f009550"
+}

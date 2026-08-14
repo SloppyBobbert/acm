@@ -1,7 +1,7 @@
 import dynamic from "next/dynamic";
 import { useState } from "react";
 import useSWR from "swr";
-import shallow from "zustand/shallow";
+import { shallow } from "zustand/shallow";
 import { api_url, fetcher } from "../../utils/fetcher";
 import { JobStatus, monitorJob } from "../../utils/job";
 import { useAdminStore, User, useSession, useStore } from "../../utils/state";

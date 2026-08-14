@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT\n            id,\n            title,\n            description,\n            meeting_time\n        FROM\n            meetings\n        WHERE\n            DATETIME('now', 'localtime', 'start of day') < DATETIME(meeting_time)\n        ORDER BY\n            DATETIME(meeting_time) ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "title",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "description",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "meeting_time",
+        "ordinal": 3,
+        "type_info": "Datetime"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "1dc9b0c89f6472829323b4c90f3a2481ab701f9e85a2cd00b634007f210060b8"
+}

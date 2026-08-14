@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                INSERT INTO test_results (\n                    submission_id,\n                    test_id,\n                    runtime,\n                    output,\n                    error,\n                    success\n                ) VALUES (?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "12c48be322eec5d00ffe22a7683f9e2c185f4b83b15f57c61570cf9b5b30bc83"
+}

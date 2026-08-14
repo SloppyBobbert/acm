@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT INTO meetings (\n            title,\n            description,\n            meeting_time\n        )\n        VALUES (?, ?, ?)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "06911aa537434d8fab530d4d892ed2247361809599caf79d202673452dab6c4f"
+}

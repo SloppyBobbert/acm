@@ -1,23 +1,36 @@
 ARG ACM_DOCKER_PLATFORM=linux/amd64
 
 FROM --platform=$ACM_DOCKER_PLATFORM rust:1.92-bullseye AS builder
+ARG TARGETARCH
+WORKDIR /app
+
 COPY . .
-RUN cargo build --release --package ramiel
+RUN --mount=type=cache,id=cargo-registry-rust-1.92-${TARGETARCH},target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=cargo-git-rust-1.92-${TARGETARCH},target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=acm-target-rust-1.92-${TARGETARCH},target=/app/target,sharing=locked \
+    cargo build --release --locked --package ramiel && \
+    cp /app/target/release/ramiel /tmp/ramiel
 
 FROM --platform=$ACM_DOCKER_PLATFORM debian:bullseye-slim
+WORKDIR /
 
-RUN apt-get update; \
-    apt-get install -y openssl libxml2 wget libxkbcommon-x11-0 libncurses5 ca-certificates
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openssl libxml2 wget curl libxkbcommon-x11-0 libncurses5 ca-certificates
 
-RUN wget https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-19/wasi-sdk_19.0_amd64.deb; \
-    dpkg -i wasi-sdk_19.0_amd64.deb; \
-    rm -f wasi-sdk_19.0_amd64.deb
+RUN wget -O /tmp/wasi-sdk_19.0_amd64.deb https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-19/wasi-sdk_19.0_amd64.deb && \
+    echo "de05c74ae8ef17c9be3022df1cb014fca3f49648a763d5486dd233f5246517f6  /tmp/wasi-sdk_19.0_amd64.deb" | sha256sum -c - && \
+    dpkg -i /tmp/wasi-sdk_19.0_amd64.deb && \
+    rm -f /tmp/wasi-sdk_19.0_amd64.deb
 
-RUN apt-get purge -y wget; \
-    apt-get autoremove -y; \
+RUN apt-get purge -y wget && \
+    apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /target/release/ramiel /usr/local/bin/ramiel
-COPY ./wasmtime-cache.toml .
+RUN useradd --system --create-home --uid 10001 ramiel
+
+COPY --from=builder /tmp/ramiel /usr/local/bin/ramiel
+COPY ./wasmtime-cache.toml /wasmtime-cache.toml
+
+USER ramiel
 
 CMD ["ramiel", "--hostname", "0.0.0.0"]

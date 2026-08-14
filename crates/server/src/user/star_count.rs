@@ -6,7 +6,7 @@ use crate::error::{ServerError, UserError};
 
 #[derive(Serialize)]
 pub struct StarCount {
-    count: i32,
+    count: i64,
 }
 
 pub async fn star_count(

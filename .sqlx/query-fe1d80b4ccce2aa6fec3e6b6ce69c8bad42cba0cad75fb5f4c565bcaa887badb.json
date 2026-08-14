@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO activities (\n                meeting_id,\n                title,\n                description,\n                activity_type\n            )\n            VALUES (?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "fe1d80b4ccce2aa6fec3e6b6ce69c8bad42cba0cad75fb5f4c565bcaa887badb"
+}

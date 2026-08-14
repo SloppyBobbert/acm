@@ -26,7 +26,17 @@ export default function Editor({
     >(undefined);
     const editorRef = useRef<HTMLDivElement>(null);
     const statusBarRef = useRef<HTMLDivElement>(null);
+    const onChangeRef = useRef(onChange);
+    const valueRef = useRef(value);
     const [vimEnabled, editorTheme, editorFontSize] = useStore((state) => [state.vimEnabled, state.editorTheme, state.editorFontSize]);
+
+    useEffect(() => {
+        onChangeRef.current = onChange;
+    }, [onChange]);
+
+    useEffect(() => {
+        valueRef.current = value;
+    }, [value]);
 
     let theme: string;
 
@@ -46,14 +56,14 @@ export default function Editor({
         if (editor && editor.getValue() != value) {
             editor.setValue(value);
         }
-    }, [value]);
+    }, [editor, value]);
 
     useEffect(() => {
         const editor = monaco.editor.create(editorRef.current!, {
             fontSize: editorFontSize,
             language,
             theme,
-            value,
+            value: valueRef.current,
             cursorSmoothCaretAnimation: true,
             extraEditorClassName: `h-full ${className}`,
             automaticLayout: true,
@@ -65,7 +75,7 @@ export default function Editor({
         setEditor(editor);
 
         const subscription = editor.onDidChangeModelContent((event) => {
-            onChange(editor.getValue(), event);
+            onChangeRef.current(editor.getValue(), event);
         });
 
         let vimMode: any = null;
@@ -87,7 +97,7 @@ export default function Editor({
                 subscription.dispose();
             }
         };
-    }, [vimEnabled, editorTheme, editorFontSize]);
+    }, [vimEnabled, editorFontSize, language, theme, className]);
 
     return (
         <div className="h-full grid grid-rows-full-min grid-cols-full">

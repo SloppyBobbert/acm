@@ -16,6 +16,8 @@ fi
 : "${DATABASE_URL:=sqlite://./db.sqlite}"
 : "${JWT_SECRET:=dev-only-change-me}"
 : "${DISCORD_SECRET:=dev-only-change-me}"
+: "${FRONTEND_ORIGIN:=http://127.0.0.1:3000}"
+: "${COOKIE_SECURE:=false}"
 : "${API_HOSTNAME:=127.0.0.1}"
 : "${PORT:=8081}"
 : "${RAMIEL_HOSTNAME:=127.0.0.1}"
@@ -61,7 +63,9 @@ echo "Starting API at http://$API_HOSTNAME:$PORT"
     --hostname "$API_HOSTNAME" \
     --port "$PORT" \
     --database-url "$DATABASE_URL" \
-    --ramiel-url "$RAMIEL_URL") \
+    --ramiel-url "$RAMIEL_URL" \
+    --frontend-origin "$FRONTEND_ORIGIN" \
+    --cookie-secure "$COOKIE_SECURE") \
     > "$LOG_DIR/server.log" 2>&1 &
 server_pid=$!
 
