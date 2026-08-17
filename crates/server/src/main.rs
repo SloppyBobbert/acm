@@ -89,6 +89,13 @@ mod tests {
     use tower::ServiceExt;
 
     #[test]
+    fn cli_definition_is_valid() {
+        use clap::CommandFactory;
+
+        Args::command().debug_assert();
+    }
+
+    #[test]
     fn accepts_http_or_https_frontend_origins() {
         assert_eq!(
             frontend_origin("http://127.0.0.1:3000").unwrap(),
@@ -184,7 +191,7 @@ struct Args {
     #[arg(env)]
     frontend_origin: String,
 
-    #[arg(env, value_parser = clap::value_parser!(bool))]
+    #[arg(env, long, value_parser = clap::value_parser!(bool))]
     cookie_secure: bool,
 }
 
