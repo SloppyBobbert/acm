@@ -45,7 +45,7 @@ On Apple Silicon, use `ACM_DOCKER_PLATFORM=linux/amd64`. For an isolated image b
 docker build --platform linux/amd64 --provenance=false -f Dockerfile.ramiel -t acm-ramiel:local .
 ```
 
-After starting the stack, verify the API and runner health endpoints as described in [operations](operations.md).
+After starting the stack, verify the public API health endpoint and inspect every service's health status as described in [operations](operations.md).
 
 ## CI
 

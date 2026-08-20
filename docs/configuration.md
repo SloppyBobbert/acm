@@ -47,6 +47,6 @@ Copy `deploy/.env.production.example` to `deploy/.env.production` on the deploym
 | `PARALLEL_JOB_COUNT` | No | `1` | Passed to the server. |
 | `ACM_DOCKER_PLATFORM` | No | `linux/amd64` | Server image build/run platform. Ramiel is fixed to `linux/amd64`. |
 
-Production Compose sets the server bind address, API port, SQLite URL, Ramiel URL, and `COOKIE_SECURE=true` internally. It sets Ramiel's cache configuration internally. Do not add those values to the production env file unless the Compose file is changed.
+The server image command sets the production bind address. Production Compose sets the API port, SQLite URL, Ramiel URL, and `COOKIE_SECURE=true` internally; it also sets Ramiel's cache configuration. Do not add those values to the production env file unless the image or Compose file is changed.
 
 **Current OAuth limitation:** production Discord sign-in redirects to `https://chicoacm.org/auth/discord`. Arbitrary production frontend origins are not supported for sign-in by configuration alone, even though `FRONTEND_ORIGIN` controls CORS.
