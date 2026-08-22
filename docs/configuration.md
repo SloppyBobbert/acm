@@ -9,7 +9,7 @@ Copy the example files before local or production use. Do not put real secrets i
 | `API_HOSTNAME` | Local script only | `127.0.0.1` | API bind address used by `scripts/dev-local.sh`; not read by server Clap. |
 | `HOSTNAME` | No | `127.0.0.1` | Server Clap bind address. Shells commonly predefine it, so pass `--hostname` explicitly. |
 | `PORT` | No | `8081` | API TCP port. Server Clap option; `.env.example`; local script. |
-| `DATABASE_URL` | Runtime: no | `./db.sqlite` in server, `sqlite://./db.sqlite` in local script | SQLite connection URL. Server Clap option and `.env.example`; use for intentional online SQLx checks against a migrated schema. |
+| `DATABASE_URL` | No at runtime; yes for online SQLx checks | `./db.sqlite` in server, `sqlite://./db.sqlite` in local script | SQLite connection URL. The server uses its default when unset; set it to choose another database. Intentional online SQLx checks require a migrated schema. |
 | `RAMIEL_URL` | No | `http://127.0.0.1:8082` | URL of Ramiel. Server Clap option and `.env.example`. |
 | `PARALLEL_JOB_COUNT` | No | `1` | Unsigned 8-bit job concurrency. Values must be at least `1`; `0` parses but leaves worker behavior unsupported. |
 | `JWT_SECRET` | Yes | none | Signing secret supplied through `.env.example` copy or process environment. |

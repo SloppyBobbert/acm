@@ -32,14 +32,14 @@ If `ACM_DATA_DIR` names another path, create and chown that path instead. Produc
 Run these commands from the repository root on the deployment host:
 
 ```sh
-docker compose --env-file deploy/.env.production -f compose.production.yml config
+docker compose --env-file deploy/.env.production -f compose.production.yml config --quiet
 docker compose --env-file deploy/.env.production -f compose.production.yml build
 docker compose --env-file deploy/.env.production -f compose.production.yml up -d
 docker compose --env-file deploy/.env.production -f compose.production.yml ps
 docker compose --env-file deploy/.env.production -f compose.production.yml logs -f caddy server ramiel
 ```
 
-Caddy obtains and serves TLS for `API_DOMAIN` after DNS and public ports are correct. To inspect the resolved configuration without starting containers, use the `config` command above.
+Caddy obtains and serves TLS for `API_DOMAIN` after DNS and public ports are correct. `config --quiet` validates the resolved configuration without printing interpolated values, including secrets.
 
 ## Vercel
 
@@ -61,7 +61,7 @@ set -euo pipefail
 set -a
 . deploy/.env.production
 set +a
-curl --fail --resolve "${API_DOMAIN}:443:127.0.0.1" "https://${API_DOMAIN}/healthz"
+curl --fail --connect-timeout 5 --max-time 10 --resolve "${API_DOMAIN}:443:127.0.0.1" "https://${API_DOMAIN}/healthz"
 docker compose --env-file deploy/.env.production -f compose.production.yml ps
 ```
 

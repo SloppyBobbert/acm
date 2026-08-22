@@ -35,9 +35,11 @@ corepack yarn build
 First copy `deploy/.env.production.example` to `deploy/.env.production` and complete its required values. Then build the production services as Compose builds them:
 
 ```sh
+docker compose --env-file deploy/.env.production -f compose.production.yml config --quiet
 docker compose --env-file deploy/.env.production -f compose.production.yml build
-docker compose --env-file deploy/.env.production -f compose.production.yml config
 ```
+
+`config --quiet` validates the resolved Compose configuration without printing interpolated values, including secrets.
 
 On Apple Silicon, use `ACM_DOCKER_PLATFORM=linux/amd64`. For an isolated image build, use the matching Dockerfile and platform, for example:
 

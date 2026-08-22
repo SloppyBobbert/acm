@@ -10,8 +10,8 @@ set -a
 . deploy/.env.production
 set +a
 docker compose --env-file deploy/.env.production -f compose.production.yml ps
+curl --fail --connect-timeout 5 --max-time 10 --resolve "${API_DOMAIN}:443:127.0.0.1" "https://${API_DOMAIN}/healthz"
 docker compose --env-file deploy/.env.production -f compose.production.yml logs -f caddy server ramiel
-curl --fail --resolve "${API_DOMAIN}:443:127.0.0.1" "https://${API_DOMAIN}/healthz"
 ```
 
 The server and Ramiel each expose `/healthz` inside the stack. Caddy's health check reaches the API health endpoint through the configured HTTPS API domain. A successful API check means the server responded; it does not exercise the runner.

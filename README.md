@@ -28,7 +28,7 @@ cp lilith/.env.local.example lilith/.env.local
 SQLX_OFFLINE=true ./scripts/dev-local.sh
 ```
 
-The script builds the Rust services, installs frontend dependencies when needed, starts Ramiel on `127.0.0.1:8082`, starts the API on `127.0.0.1:8081`, and runs the frontend on `127.0.0.1:3000`. It writes API and runner logs to `.local/logs/`. The root `.env` sets `DATABASE_URL`, and the script creates its empty SQLite file before Cargo builds. `SQLX_OFFLINE=true` makes Cargo use the checked-in `.sqlx` metadata; the server applies migrations when it starts.
+By default, the script builds the Rust services, installs frontend dependencies when needed, starts Ramiel on `127.0.0.1:8082`, starts the API on `127.0.0.1:8081`, and runs the frontend on `127.0.0.1:3000`. It writes API and runner logs to `.local/logs/`. Override these defaults with `RAMIEL_HOSTNAME`, `RAMIEL_PORT`, `API_HOSTNAME`, `PORT`, and `FRONTEND_PORT`. The root `.env` sets `DATABASE_URL`, and the script creates its empty SQLite file before Cargo builds. `SQLX_OFFLINE=true` makes Cargo use the checked-in `.sqlx` metadata; the server applies migrations when it starts.
 
 For bounded manual debugging, use three terminals. Do not export the root `.env` into Ramiel:
 
@@ -46,7 +46,7 @@ cd lilith && corepack yarn dev
 
 Set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL` if they differ from the local defaults. **Current limitation:** Discord sign-in uses `http://localhost:3000/auth/discord` locally, so local sign-in requires `FRONTEND_ORIGIN=http://localhost:3000`; the current example's `127.0.0.1` default does not support local sign-in.
 
-Check the local services:
+Check the local services at their default addresses:
 
 ```sh
 curl --fail http://127.0.0.1:8082/healthz
@@ -55,7 +55,7 @@ SQLX_OFFLINE=true cargo test --workspace
 (cd lilith && corepack yarn lint && corepack yarn build)
 ```
 
-Ordinary Rust checks use checked-in SQLx metadata with `SQLX_OFFLINE=true`. `DATABASE_URL` is needed at runtime or for intentional online SQLx checking against a migrated schema; see [testing](docs/testing.md).
+Ordinary Rust checks use checked-in SQLx metadata with `SQLX_OFFLINE=true`. At runtime, the server can use its default `./db.sqlite`; set `DATABASE_URL` to choose another database. `DATABASE_URL` is required for intentional online SQLx checking against a migrated schema; see [testing](docs/testing.md).
 
 ## Containers and production
 
