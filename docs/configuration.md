@@ -12,15 +12,17 @@ Copy the example files before local or production use. Do not put real secrets i
 | `DATABASE_URL` | No at runtime; yes for online SQLx checks | `./db.sqlite` in server, `sqlite://./db.sqlite` in local script | SQLite connection URL. The server uses its default when unset; set it to choose another database. Intentional online SQLx checks require a migrated schema. |
 | `RAMIEL_URL` | No | `http://127.0.0.1:8082` | URL of Ramiel. Server Clap option and `.env.example`. |
 | `PARALLEL_JOB_COUNT` | No | `1` | Unsigned 8-bit job concurrency. Values must be at least `1`; `0` parses but leaves worker behavior unsupported. |
-| `JWT_SECRET` | Yes | none | Signing secret supplied through `.env.example` copy or process environment. |
-| `DISCORD_SECRET` | Yes | none | Discord OAuth client secret supplied through `.env.example` copy or process environment. |
-| `FRONTEND_ORIGIN` | Yes | none | Exact `http` or `https` origin, without path or query. Used for credentialed CORS. |
-| `COOKIE_SECURE` | Yes | none | Boolean. Use `false` only for local HTTP and `true` for production HTTPS. |
+| `JWT_SECRET` | Local script: no; manual server/production: yes | Local script: `dev-only-change-me`; otherwise none | Signing secret. The local default is not production-safe. |
+| `DISCORD_SECRET` | Local script: no; manual server/production: yes | Local script: `dev-only-change-me`; otherwise none | Discord OAuth client secret. The local default is not production-safe. |
+| `FRONTEND_ORIGIN` | Local script: no; manual server/production: yes | Local script: `http://127.0.0.1:3000`; otherwise none | Exact `http` or `https` origin, without path or query. Used for credentialed CORS. |
+| `COOKIE_SECURE` | Local script: no; manual server: yes | Local script: `false`; production Compose: `true` | Boolean. Use `false` only for local HTTP and `true` for production HTTPS. |
 | `RAMIEL_HOSTNAME` | Local script only | `127.0.0.1` | Ramiel bind address used by `scripts/dev-local.sh`. |
 | `RAMIEL_PORT` | Local script only | `8082` | Ramiel port used by `scripts/dev-local.sh`. |
 | `FRONTEND_PORT` | Local script only | `3000` | Next.js dev-server port used by `scripts/dev-local.sh`. |
 
 Ramiel itself accepts `PORT` (default `8082`), `HOSTNAME` (default `127.0.0.1`), and `WASMTIME_CACHE_CONFIG` (default `./wasmtime-cache.toml`). The local script passes Ramiel's bind address and port explicitly. Pass `--hostname` to either service rather than relying on `HOSTNAME` from the shell.
+
+The local-script secret defaults exist only for development. Set unique production `JWT_SECRET` and `DISCORD_SECRET` values; never use `dev-only-change-me` outside local development.
 
 ## Frontend
 

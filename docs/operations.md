@@ -28,6 +28,20 @@ set -a
 . deploy/.env.production
 set +a
 docker compose --env-file deploy/.env.production -f compose.production.yml stop server
+backup_dir=""
+backup_complete=0
+backup_cleanup() {
+  exit_status=$?
+  trap - EXIT
+  if [ "$exit_status" -ne 0 ]; then
+    if [ -n "$backup_dir" ] && [ "$backup_complete" -eq 0 ]; then
+      sudo touch "$backup_dir/INCOMPLETE" || true
+    fi
+    docker compose --env-file deploy/.env.production -f compose.production.yml start server || true
+  fi
+  exit "$exit_status"
+}
+trap backup_cleanup EXIT
 backup_root=/var/backups/acm # operator-chosen path, outside ACM_DATA_DIR
 quarantine_root=/var/lib/acm-quarantine # choose the ACM_DATA_DIR filesystem if practical
 sudo install -d -m 700 -o root -g root "$backup_root" "$quarantine_root"
@@ -36,10 +50,12 @@ sudo cp "$ACM_DATA_DIR/db.sqlite" "$backup_dir/"
 for sidecar in db.sqlite-wal db.sqlite-shm; do
   sudo test ! -e "$ACM_DATA_DIR/$sidecar" || sudo cp "$ACM_DATA_DIR/$sidecar" "$backup_dir/"
 done
+backup_complete=1
 docker compose --env-file deploy/.env.production -f compose.production.yml start server
+trap - EXIT
 ```
 
-After a successful copy, restart the server as shown. If a copy fails, do not use that backup; restart the server with `docker compose --env-file deploy/.env.production -f compose.production.yml start server`, then investigate.
+After a successful copy, restart the server as shown. If a later command fails, the EXIT handler marks an unfinished created directory with `INCOMPLETE` and attempts to restart the server while preserving the failure status. Backups containing `INCOMPLETE` are unusable.
 
 To restore, set `backup_dir` to the selected immutable backup directory in the current shell; it does not persist from the backup session. Stop the server, create a new empty quarantine directory, and move the existing database set before copying that one matching backup set:
 
@@ -48,12 +64,13 @@ set -euo pipefail
 set -a
 . deploy/.env.production
 set +a
-docker compose --env-file deploy/.env.production -f compose.production.yml stop server
 backup_root=/var/backups/acm # operator-chosen path, outside ACM_DATA_DIR
 quarantine_root=/var/lib/acm-quarantine # choose the ACM_DATA_DIR filesystem if practical
 sudo install -d -m 700 -o root -g root "$backup_root" "$quarantine_root"
 backup_dir="$backup_root/acm-REPLACE_ME"
+sudo test ! -e "$backup_dir/INCOMPLETE"
 sudo test -f "$backup_dir/db.sqlite"
+docker compose --env-file deploy/.env.production -f compose.production.yml stop server
 quarantine_dir="$(sudo mktemp -d "$quarantine_root/acm-XXXXXXXX")"
 for name in db.sqlite db.sqlite-wal db.sqlite-shm; do
   sudo test ! -e "$ACM_DATA_DIR/$name" || sudo mv "$ACM_DATA_DIR/$name" "$quarantine_dir/"
