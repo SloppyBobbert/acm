@@ -81,7 +81,7 @@ impl Queueable for SubmitJob {
     ) -> Result<Value, ServerError> {
         let client = Client::new();
         let res = client
-            .post(&format!("{ramiel_url}/run/c++"))
+            .post(format!("{ramiel_url}/run/c++"))
             .json(self)
             .send()
             .await
@@ -100,7 +100,10 @@ impl Queueable for SubmitJob {
             Err(err) => {
                 let err = match err {
                     RunnerError::CompilationError { diagnostics } => {
-                        serde_json::to_string(&diagnostics).unwrap()
+                        serde_json::to_string(&diagnostics).map_err(|error| {
+                            log::error!("error serializing compiler diagnostics: {error}");
+                            ServerError::InternalError
+                        })?
                     }
                     _ => err.to_string(),
                 };
@@ -119,7 +122,10 @@ impl Queueable for SubmitJob {
         };
 
         let now = Utc::now().naive_utc();
-        let mut tx = pool.begin().await.unwrap();
+        let mut tx = pool.begin().await.map_err(|error| {
+            log::error!("error beginning submission transaction: {error}");
+            ServerError::InternalError
+        })?;
 
         let submission: Submission = sqlx::query_as(
             r#"
@@ -153,7 +159,10 @@ impl Queueable for SubmitJob {
         })?;
 
         for test in &tests {
-            let output = serde_json::to_string(&test.output).unwrap();
+            let output = serde_json::to_string(&test.output).map_err(|error| {
+                log::error!("error serializing test output: {error}");
+                ServerError::InternalError
+            })?;
 
             sqlx::query!(
                 r#"
@@ -193,20 +202,27 @@ impl Queueable for SubmitJob {
                 "SELECT COUNT(id) as count FROM submissions WHERE problem_id = ? AND success = true",
                 self.problem_id
             )
-                .fetch_one(pool)
-                .await
-                .expect("Couldn't fetch row count");
+            .fetch_one(pool)
+            .await;
 
-            let message = if subs.count == 1 {
-                BroadcastMessage::NewStar(submission.clone())
-            } else {
-                BroadcastMessage::NewCompletion(submission.clone())
-            };
+            match subs {
+                Ok(subs) => {
+                    let message = if subs.count == 1 {
+                        BroadcastMessage::NewStar(submission.clone())
+                    } else {
+                        BroadcastMessage::NewCompletion(submission.clone())
+                    };
 
-            broadcast.send(message).ok();
+                    broadcast.send(message).ok();
+                }
+                Err(error) => log::error!("error counting successful submissions: {error}"),
+            }
         }
 
-        Ok(serde_json::to_value(submission).unwrap())
+        serde_json::to_value(submission).map_err(|error| {
+            log::error!("error serializing submission: {error}");
+            ServerError::InternalError
+        })
     }
 
     fn info(&self) -> String {

@@ -22,6 +22,7 @@ use tokio::{
 use super::{run_command, run_test_timed, timeout_error, Runner, TestResults, WasmRuntime};
 
 const CACHE_VERSION: &str = "clang++-wasi-v1";
+const CHILD_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(Clone)]
 pub struct CPlusPlus {
@@ -146,8 +147,7 @@ impl Runner for CPlusPlus {
         let command = compile_problem(&prefix, &reference, deadline, timeout_message).await?;
 
         let mut outputs = Vec::new();
-        let mut i = 0;
-        for input in form.inputs.into_iter() {
+        for (index, input) in (0_i64..).zip(form.inputs) {
             let (output, _, fuel) = run_command(
                 self.runtime.clone(),
                 &command,
@@ -159,13 +159,11 @@ impl Runner for CPlusPlus {
             .await?;
             outputs.push(Test {
                 id: 0,
-                index: i,
+                index,
                 max_fuel: Some(fuel as i64),
                 input,
                 expected_output: output,
             });
-
-            i += 1;
         }
 
         Ok(outputs)
@@ -258,7 +256,7 @@ fn process_file(file: &str) -> String {
 
     // include headers automatically
     new_file.push_str(bits_cpp);
-    new_file.push_str(&file);
+    new_file.push_str(file);
 
     new_file
 }
@@ -283,7 +281,7 @@ async fn compile_problem(
         &wasm_filename,
         &marker_filename,
         implementation,
-        &cache_key,
+        cache_key,
     )
     .await?
     {
@@ -311,6 +309,17 @@ async fn compile_problem(
     }
 
     let mut command = Command::new("/opt/wasi-sdk/bin/clang++");
+    let implementation_path =
+        implementation_filename
+            .to_str()
+            .ok_or_else(|| RunnerError::InternalServerError {
+                message: "C++ source path is not valid UTF-8".to_string(),
+            })?;
+    let wasm_path = wasm_filename
+        .to_str()
+        .ok_or_else(|| RunnerError::InternalServerError {
+            message: "Wasm output path is not valid UTF-8".to_string(),
+        })?;
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -330,14 +339,16 @@ async fn compile_problem(
             "-fno-caret-diagnostics",
             "-fno-exceptions",
             "-std=c++20",
-            implementation_filename.to_str().expect("UTF-8 path"),
+            implementation_path,
             "-o",
-            wasm_filename.to_str().expect("UTF-8 path"),
+            wasm_path,
         ]);
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command.spawn()?;
-    let pgid = child.id().expect("spawned child must have a pid") as i32;
+    let pgid = child.id().ok_or_else(|| RunnerError::InternalServerError {
+        message: "Spawned C++ compiler did not provide a process ID".to_string(),
+    })? as i32;
     let output = match wait_for_child(&mut child, pgid, deadline).await? {
         Some(output) => output,
         None => {
@@ -390,51 +401,110 @@ struct ChildOutput {
     stderr: Vec<u8>,
 }
 
+/// Ensures compiler descendants cannot outlive an interrupted wait.
+struct ProcessGroupGuard {
+    #[cfg(unix)]
+    pgid: i32,
+    armed: bool,
+}
+
+impl ProcessGroupGuard {
+    fn new(pgid: i32) -> Self {
+        #[cfg(not(unix))]
+        let _ = pgid;
+        Self {
+            #[cfg(unix)]
+            pgid,
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ProcessGroupGuard {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if self.armed {
+            unsafe {
+                libc::kill(-self.pgid, libc::SIGKILL);
+            }
+        }
+    }
+}
+
+fn kill_process_group_or_child(child: &mut Child, pgid: i32) {
+    #[cfg(unix)]
+    {
+        if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 {
+            let _ = child.start_kill();
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pgid;
+        let _ = child.start_kill();
+    }
+}
+
+async fn cleanup_child(child: &mut Child, pgid: i32, guard: &mut ProcessGroupGuard) {
+    kill_process_group_or_child(child, pgid);
+    if let Ok(Ok(_)) = tokio::time::timeout(CHILD_CLEANUP_TIMEOUT, child.wait()).await {
+        guard.disarm();
+    }
+}
+
 async fn wait_for_child(
     child: &mut Child,
     pgid: i32,
     deadline: tokio::time::Instant,
-) -> std::io::Result<Option<ChildOutput>> {
-    let mut stderr = child.stderr.take().expect("stderr must be piped");
+) -> Result<Option<ChildOutput>, RunnerError> {
+    let mut cleanup_guard = ProcessGroupGuard::new(pgid);
+    let mut stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            cleanup_child(child, pgid, &mut cleanup_guard).await;
+            return Err(RunnerError::InternalServerError {
+                message: "C++ compiler stderr was not piped".to_string(),
+            });
+        }
+    };
     let mut output = Vec::new();
 
     let completed = {
         let wait_and_drain = async {
             let (status, _) = tokio::try_join!(child.wait(), stderr.read_to_end(&mut output))?;
-            Ok::<_, std::io::Error>(status)
+            Ok::<_, RunnerError>(status)
         };
         tokio::pin!(wait_and_drain);
         tokio::select! {
             biased;
-            result = &mut wait_and_drain => Some(result?),
+            result = &mut wait_and_drain => Some(result),
             _ = tokio::time::sleep_until(deadline) => None,
         }
     };
 
-    if let Some(status) = completed {
-        return Ok(Some(ChildOutput {
-            status,
-            stderr: output,
-        }));
-    }
-
-    drop(stderr);
-    #[cfg(unix)]
-    {
-        let result = unsafe { libc::kill(-pgid, libc::SIGKILL) };
-        if result != 0 {
-            let error = std::io::Error::last_os_error();
-            if error.raw_os_error() != Some(libc::ESRCH) {
-                let _ = child.start_kill();
-            }
+    match completed {
+        Some(Ok(status)) => {
+            cleanup_guard.disarm();
+            Ok(Some(ChildOutput {
+                status,
+                stderr: output,
+            }))
+        }
+        Some(Err(error)) => {
+            drop(stderr);
+            cleanup_child(child, pgid, &mut cleanup_guard).await;
+            Err(error)
+        }
+        None => {
+            drop(stderr);
+            cleanup_child(child, pgid, &mut cleanup_guard).await;
+            Ok(None)
         }
     }
-    #[cfg(not(unix))]
-    {
-        let _ = child.start_kill();
-    }
-    child.wait().await?;
-    Ok(None)
 }
 
 async fn remove_file_checked(path: &Path) -> io::Result<()> {
@@ -453,7 +523,7 @@ async fn invalidate_compile_outputs(marker: &Path, wasm: &Path) {
 fn parse_number(iter: &mut Peekable<Chars>) -> usize {
     let mut num = 0;
 
-    while let Some(c) = iter.next() {
+    for c in iter.by_ref() {
         if let Some(d) = c.to_digit(10) {
             num = num * 10 + d as usize;
         } else {
@@ -469,14 +539,14 @@ fn parse_number(iter: &mut Peekable<Chars>) -> usize {
 /// Example format (except we don't actually do the brackets thus far):
 /// /tmp/acm/submissions/1/41/implementation.cpp:50:12:{50:16-50:17}: error: no viable conversion from 'int' to 'std::string' (aka 'basic_string<char, char_traits<char>, allocator<char>>')
 fn diagnostic_from_str(s: &str) -> Result<Option<Diagnostic>, RunnerError> {
-    if s.find(".cpp").is_none() || !s.starts_with("/") {
+    if !s.contains(".cpp") || !s.starts_with("/") {
         return Ok(None);
     }
 
     let mut iter = s.chars().peekable();
 
     // go until we find the first colon
-    while let Some(c) = iter.next() {
+    for c in iter.by_ref() {
         if c == ':' {
             break;
         }
@@ -496,7 +566,7 @@ fn diagnostic_from_str(s: &str) -> Result<Option<Diagnostic>, RunnerError> {
 
     let mut error_type = String::new();
 
-    while let Some(c) = iter.next() {
+    for c in iter.by_ref() {
         if c == ':' {
             break;
         }
@@ -528,7 +598,7 @@ fn parse_cplusplus_error(err: String) -> RunnerError {
     println!("{err}");
 
     for line in err.lines() {
-        match diagnostic_from_str(&line) {
+        match diagnostic_from_str(line) {
             Ok(Some(diagnostic)) => diagnostics.push(diagnostic),
             Ok(None) => {}
             Err(e) => {
@@ -616,19 +686,15 @@ mod tests {
         fs::write(&source, implementation).await.unwrap();
         fs::write(&wasm, b"wasm").await.unwrap();
 
-        assert!(
-            !cache_matches(&source, &wasm, &marker, implementation, &key)
-                .await
-                .unwrap()
-        );
+        assert!(!cache_matches(&source, &wasm, &marker, implementation, key)
+            .await
+            .unwrap());
         fs::write(&marker, "wrong key").await.unwrap();
-        assert!(
-            !cache_matches(&source, &wasm, &marker, implementation, &key)
-                .await
-                .unwrap()
-        );
+        assert!(!cache_matches(&source, &wasm, &marker, implementation, key)
+            .await
+            .unwrap());
         fs::write(&marker, &key).await.unwrap();
-        assert!(cache_matches(&source, &wasm, &marker, implementation, &key)
+        assert!(cache_matches(&source, &wasm, &marker, implementation, key)
             .await
             .unwrap());
         fs::remove_dir_all(directory).await.unwrap();
@@ -791,6 +857,25 @@ mod tests {
 
         assert!(output.status.success());
         assert_eq!(output.stderr, b"diagnostic");
+    }
+
+    #[tokio::test]
+    async fn subprocess_helper_reports_missing_stderr_pipe() {
+        let mut child = Command::new("sh").args(["-c", "exit 0"]).spawn().unwrap();
+        let pgid = child.id().unwrap() as i32;
+
+        let result = wait_for_child(
+            &mut child,
+            pgid,
+            tokio::time::Instant::now() + Duration::from_secs(1),
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(RunnerError::InternalServerError { .. })
+        ));
+        assert!(child.try_wait().unwrap().is_some());
     }
 
     #[tokio::test]

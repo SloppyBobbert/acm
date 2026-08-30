@@ -3,7 +3,7 @@
 
 use axum::{
     async_trait,
-    extract::{FromRequestParts},
+    extract::FromRequestParts,
     http::request::Parts,
     routing::{get, post},
     Router,
@@ -58,20 +58,15 @@ impl Keys {
     }
 }
 
-#[derive(Debug, Clone, Copy, Type, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Type, Deserialize, Serialize, PartialEq, Default)]
 #[sqlx(rename_all = "SCREAMING_SNAKE_CASE")]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Auth {
     Admin,
     Officer,
+    #[default]
     Member,
     LoggedOut,
-}
-
-impl Default for Auth {
-    fn default() -> Self {
-        Auth::Member
-    }
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {

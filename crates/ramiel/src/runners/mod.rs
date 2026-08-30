@@ -105,16 +105,16 @@ impl TestResults {
     }
 }
 
-impl Into<RunnerResponse> for TestResults {
-    fn into(self) -> RunnerResponse {
-        let mut tests = Vec::with_capacity(self.failed_tests.len() + self.passed_tests.len());
-        let passed = self.failed_tests.is_empty();
-        tests.extend(self.failed_tests);
-        tests.extend(self.passed_tests);
+impl From<TestResults> for RunnerResponse {
+    fn from(results: TestResults) -> Self {
+        let mut tests = Vec::with_capacity(results.failed_tests.len() + results.passed_tests.len());
+        let passed = results.failed_tests.is_empty();
+        tests.extend(results.failed_tests);
+        tests.extend(results.passed_tests);
 
-        RunnerResponse {
+        Self {
             tests,
-            runtime: self.runtime,
+            runtime: results.runtime,
             passed,
         }
     }
@@ -175,6 +175,13 @@ const MAX_FUEL: i64 = 1 << 48;
 
 fn clamp_fuel(fuel: Option<i64>) -> u64 {
     fuel.unwrap_or(MAX_FUEL).clamp(0, MAX_FUEL) as u64
+}
+
+fn restore_fuel_after_bonus(fuel_before: u64, fuel_after: u64, requested_bonus: u64) -> u64 {
+    let granted_bonus = u64::MAX.saturating_sub(fuel_before).min(requested_bonus);
+    let fuel_with_bonus = fuel_before.saturating_add(granted_bonus);
+    let consumed = fuel_with_bonus.saturating_sub(fuel_after);
+    fuel_after.saturating_sub(granted_bonus.saturating_sub(consumed))
 }
 
 fn epoch_ticks_until(
@@ -265,9 +272,12 @@ pub(crate) async fn run_command(
             epoch_period,
         ));
         store.epoch_deadline_trap();
-        store
-            .set_fuel(clamp_fuel(fuel))
-            .expect("Failed to set fuel");
+        store.set_fuel(clamp_fuel(fuel)).map_err(|e| {
+            log::error!("failed to set initial fuel: {e}");
+            RunnerError::InternalServerError {
+                message: "Failed to configure wasm fuel".to_string(),
+            }
+        })?;
         store.limiter(|state| &mut state.limits);
 
         // Instantiate our module with the imports we've created, and run it.
@@ -290,10 +300,23 @@ pub(crate) async fn run_command(
         })?;
 
         const FUEL_DEFAULT: u64 = 100_000_000_000;
-        let fuel_before_initialize = store.get_fuel().expect("Failed to get fuel");
+        let fuel_before_initialize = store.get_fuel().map_err(|e| {
+            log::error!("failed to get fuel before initialization: {e}");
+            RunnerError::InternalServerError {
+                message: "Failed to read wasm fuel".to_string(),
+            }
+        })?;
+        let initialization_bonus = u64::MAX
+            .saturating_sub(fuel_before_initialize)
+            .min(FUEL_DEFAULT);
         store
-            .set_fuel(fuel_before_initialize.saturating_add(FUEL_DEFAULT))
-            .expect("Failed to set fuel");
+            .set_fuel(fuel_before_initialize.saturating_add(initialization_bonus))
+            .map_err(|e| {
+                log::error!("failed to set initialization fuel: {e}");
+                RunnerError::InternalServerError {
+                    message: "Failed to configure wasm fuel".to_string(),
+                }
+            })?;
 
         linker.module(&mut store, "", &module).map_err(|e| {
             map_interrupt(e.into(), &blocking_timeout_message, |e| {
@@ -312,14 +335,24 @@ pub(crate) async fn run_command(
             })
         })?;
 
-        let fuel_after_initialize = store.get_fuel().expect("Failed to get fuel");
-        let consumed_for_initialize = fuel_before_initialize
-            .saturating_add(FUEL_DEFAULT)
-            .saturating_sub(fuel_after_initialize);
-        let leftover_initialize_fuel = FUEL_DEFAULT.saturating_sub(consumed_for_initialize);
+        let fuel_after_initialize = store.get_fuel().map_err(|e| {
+            log::error!("failed to get fuel after initialization: {e}");
+            RunnerError::InternalServerError {
+                message: "Failed to read wasm fuel".to_string(),
+            }
+        })?;
         store
-            .set_fuel(fuel_after_initialize.saturating_sub(leftover_initialize_fuel))
-            .expect("Failed setting fuel");
+            .set_fuel(restore_fuel_after_bonus(
+                fuel_before_initialize,
+                fuel_after_initialize,
+                initialization_bonus,
+            ))
+            .map_err(|e| {
+                log::error!("failed to restore fuel after initialization: {e}");
+                RunnerError::InternalServerError {
+                    message: "Failed to configure wasm fuel".to_string(),
+                }
+            })?;
 
         let result = input.call(&mut store, &instance);
 
@@ -451,6 +484,14 @@ mod tests {
         assert_eq!(clamp_fuel(Some(-1)), 0);
         assert_eq!(clamp_fuel(Some(MAX_FUEL + 1)), MAX_FUEL as u64);
         assert_eq!(clamp_fuel(None), MAX_FUEL as u64);
+    }
+
+    #[test]
+    fn restoring_bonus_preserves_fuel_at_overflow_boundary() {
+        assert_eq!(
+            restore_fuel_after_bonus(u64::MAX - 5, u64::MAX - 2, 100),
+            u64::MAX - 5
+        );
     }
 
     #[test]

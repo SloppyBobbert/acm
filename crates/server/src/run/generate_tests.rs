@@ -40,16 +40,24 @@ impl Queueable for GenerateTestsJob {
     ) -> Result<Value, ServerError> {
         let client = Client::new();
         let res = client
-            .post(&format!("{ramiel_url}/generate-tests/c++"))
-            .json(&self)
+            .post(format!("{ramiel_url}/generate-tests/c++"))
+            .json(self)
             .send()
             .await
-            // TODO: Handle error
-            .unwrap();
+            .map_err(|error| {
+                log::error!("error fetching generated tests from ramiel: {error}");
+                ServerError::InternalError
+            })?;
 
-        let tests: Result<Vec<Test>, RunnerError> = res.json().await.unwrap();
+        let tests: Result<Vec<Test>, RunnerError> = res.json().await.map_err(|error| {
+            log::error!("error decoding generated tests from ramiel: {error}");
+            ServerError::InternalError
+        })?;
 
-        Ok(serde_json::to_value(tests?).unwrap())
+        serde_json::to_value(tests?).map_err(|error| {
+            log::error!("error serializing generated tests: {error}");
+            ServerError::InternalError
+        })
     }
 
     fn info(&self) -> String {
@@ -62,5 +70,43 @@ impl Queueable for GenerateTestsJob {
 
     fn problem_id(&self) -> i64 {
         -1
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{routing::post, Router};
+    use sqlx::SqlitePool;
+    use tokio::net::TcpListener;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn malformed_runner_response_returns_internal_error() {
+        let app = Router::new().route(
+            "/generate-tests/c++",
+            post(|| async { "not valid runner json" }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(
+            axum::Server::from_tcp(listener.into_std().unwrap())
+                .unwrap()
+                .serve(app.into_make_service()),
+        );
+
+        let job = GenerateTestsJob {
+            reference: "".to_string(),
+            user_id: 1,
+            inputs: vec![],
+        };
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let (broadcast, _) = broadcast::channel(1);
+
+        assert!(matches!(
+            job.run(&format!("http://{address}"), &pool, &broadcast)
+                .await,
+            Err(ServerError::InternalError)
+        ));
     }
 }

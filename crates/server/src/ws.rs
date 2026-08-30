@@ -56,12 +56,9 @@ async fn handle_socket(socket: WebSocket, tx: Sender<BroadcastMessage>) {
 
             log::info!("Sending message: {}", message);
 
-            match sender.send(Message::Text(message)).await {
-                Err(e) => {
-                    log::info!("{e}");
-                    break;
-                }
-                _ => {}
+            if let Err(e) = sender.send(Message::Text(message)).await {
+                log::info!("{e}");
+                break;
             }
         }
     });

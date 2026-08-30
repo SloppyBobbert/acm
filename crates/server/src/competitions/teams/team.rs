@@ -12,19 +12,18 @@ pub async fn team(
     Path((_competition_id, team_id)): Path<(i64, i64)>,
     Extension(pool): Extension<SqlitePool>,
 ) -> Result<Json<Option<Team>>, ServerError> {
-    let (id, name) = match sqlx::query(
-        r#"SELECT teams.id, teams.name FROM teams WHERE teams.id = ?"#,
-    )
-    .bind(team_id)
-    .fetch_one(&pool)
-    .await
-    {
-        Ok(row) => (row.get_unchecked("id"), row.get_unchecked("name")),
-        Err(e) => {
-            log::error!("{e}");
-            return Ok(Json(None));
-        }
-    };
+    let (id, name) =
+        match sqlx::query(r#"SELECT teams.id, teams.name FROM teams WHERE teams.id = ?"#)
+            .bind(team_id)
+            .fetch_one(&pool)
+            .await
+        {
+            Ok(row) => (row.get_unchecked("id"), row.get_unchecked("name")),
+            Err(e) => {
+                log::error!("{e}");
+                return Ok(Json(None));
+            }
+        };
 
     let members = sqlx::query_as!(
         User,

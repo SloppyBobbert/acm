@@ -68,13 +68,16 @@ impl Queueable for CustomInputJob {
     ) -> Result<Value, ServerError> {
         let client = Client::new();
         let res = client
-            .post(&format!("{ramiel_url}/custom-input/c++"))
+            .post(format!("{ramiel_url}/custom-input/c++"))
             .json(self)
             .send()
             .await
             .map_err(|_| ServerError::InternalError)?;
 
-        let result: Result<Value, RunnerError> = res.json().await.unwrap();
+        let result: Result<Value, RunnerError> = res.json().await.map_err(|error| {
+            log::error!("error decoding custom input response from ramiel: {error}");
+            ServerError::InternalError
+        })?;
 
         Ok(result?)
     }

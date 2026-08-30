@@ -24,7 +24,7 @@ fn transpose<T>(list: Vec<Vec<T>>) -> Vec<Vec<T>> {
         .collect()
 }
 
-fn normalize(list: &mut Vec<f32>) {
+fn normalize(list: &mut [f32]) {
     let min = *list
         .iter()
         .min_by(|a, b| a.partial_cmp(b).unwrap())
@@ -46,7 +46,7 @@ fn normalize(list: &mut Vec<f32>) {
     }
 }
 
-fn calculate_mean_difference(a: &Vec<f32>, b: &Vec<f32>) -> f32 {
+fn calculate_mean_difference(a: &[f32], b: &[f32]) -> f32 {
     a.iter()
         .zip(b.iter())
         .map(|(ai, bi)| (ai - bi).abs())
@@ -54,15 +54,15 @@ fn calculate_mean_difference(a: &Vec<f32>, b: &Vec<f32>) -> f32 {
         / a.len() as f32
 }
 
-fn normalize_with_sample_function<F>(inputs: &Vec<Vec<(f32, usize)>>, function: F) -> Vec<Vec<f32>>
+fn normalize_with_sample_function<F>(inputs: &[Vec<(f32, usize)>], function: F) -> Vec<Vec<f32>>
 where
     F: Fn(f32, usize) -> f32,
 {
     inputs
-        .clone()
-        .into_iter()
+        .iter()
+        .cloned()
         .map(|argument| {
-            let mut argument = argument
+            let mut argument: Vec<f32> = argument
                 .into_iter()
                 .map(|(factor, i)| factor / function(factor, i))
                 .collect();
@@ -100,13 +100,12 @@ pub fn estimate_asymptotic_complexity(
     // println!("base data: {:?}\n", inputs);
 
     let factors = normalize_with_sample_function(&inputs, |_, i| times[i]);
-    let exponentials = normalize_with_sample_function(&inputs, |i, _| (i as f32).exp());
-    let quadratics = normalize_with_sample_function(&inputs, |i, _| (i as f32 + 1.0).powi(2));
-    let log_linears =
-        normalize_with_sample_function(&inputs, |i, _| (i as f32 + 1.0) * (i as f32 + 2.0).log2());
-    let linears = normalize_with_sample_function(&inputs, |i, _| i as f32 + 1.0);
-    let sqrts = normalize_with_sample_function(&inputs, |i, _| (i as f32 + 1.0).sqrt());
-    let logs = normalize_with_sample_function(&inputs, |i, _| (i as f32 + 2.0).log2());
+    let exponentials = normalize_with_sample_function(&inputs, |i, _| i.exp());
+    let quadratics = normalize_with_sample_function(&inputs, |i, _| (i + 1.0).powi(2));
+    let log_linears = normalize_with_sample_function(&inputs, |i, _| (i + 1.0) * (i + 2.0).log2());
+    let linears = normalize_with_sample_function(&inputs, |i, _| i + 1.0);
+    let sqrts = normalize_with_sample_function(&inputs, |i, _| (i + 1.0).sqrt());
+    let logs = normalize_with_sample_function(&inputs, |i, _| (i + 2.0).log2());
     let constants = normalize_with_sample_function(&inputs, |_, _| 1.0);
 
     // println!("actual: {:?}\n", factors);
@@ -120,36 +119,36 @@ pub fn estimate_asymptotic_complexity(
     let mut detected_complexities = vec![];
 
     for (i, factor) in factors.iter().enumerate() {
-        let mut mean_differences = vec![];
-
-        mean_differences.push((
-            AsymptoticComplexity::Exponential,
-            calculate_mean_difference(&exponentials[i], &factor),
-        ));
-        mean_differences.push((
-            AsymptoticComplexity::Quadratic,
-            calculate_mean_difference(&quadratics[i], &factor),
-        ));
-        mean_differences.push((
-            AsymptoticComplexity::LogLinear,
-            calculate_mean_difference(&log_linears[i], &factor),
-        ));
-        mean_differences.push((
-            AsymptoticComplexity::Linear,
-            calculate_mean_difference(&linears[i], &factor),
-        ));
-        mean_differences.push((
-            AsymptoticComplexity::Sqrt,
-            calculate_mean_difference(&sqrts[i], &factor),
-        ));
-        mean_differences.push((
-            AsymptoticComplexity::Log,
-            calculate_mean_difference(&logs[i], &factor),
-        ));
-        mean_differences.push((
-            AsymptoticComplexity::Constant,
-            calculate_mean_difference(&constants[i], &factor),
-        ));
+        let mean_differences = [
+            (
+                AsymptoticComplexity::Exponential,
+                calculate_mean_difference(&exponentials[i], factor),
+            ),
+            (
+                AsymptoticComplexity::Quadratic,
+                calculate_mean_difference(&quadratics[i], factor),
+            ),
+            (
+                AsymptoticComplexity::LogLinear,
+                calculate_mean_difference(&log_linears[i], factor),
+            ),
+            (
+                AsymptoticComplexity::Linear,
+                calculate_mean_difference(&linears[i], factor),
+            ),
+            (
+                AsymptoticComplexity::Sqrt,
+                calculate_mean_difference(&sqrts[i], factor),
+            ),
+            (
+                AsymptoticComplexity::Log,
+                calculate_mean_difference(&logs[i], factor),
+            ),
+            (
+                AsymptoticComplexity::Constant,
+                calculate_mean_difference(&constants[i], factor),
+            ),
+        ];
 
         // find min index
         let idx = mean_differences

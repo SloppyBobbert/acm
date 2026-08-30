@@ -104,11 +104,7 @@ fn string_bool(function_name: &str, test: OldTest) -> Result<Test> {
     );
 
     let result = FunctionValue::Bool(ContainerVariant::Single(
-        if test.expected_output.trim() == "Odd." {
-            true
-        } else {
-            false
-        },
+        test.expected_output.trim() == "Odd.",
     ));
 
     Ok(Test {
@@ -124,7 +120,6 @@ fn vec_i32(function_name: &str, test: OldTest) -> Result<Test> {
     let (_first_line, rest) = test.input.split_once("\n").unwrap();
 
     let nums = rest
-        .trim()
         .split_whitespace()
         .map(|each| each.trim().parse().unwrap())
         .collect::<Vec<i32>>();
@@ -654,7 +649,6 @@ fn meeting(function_name: &str, test: OldTest) -> Result<Test> {
     let (line1, rest) = test.input.split_once("\n").unwrap();
 
     let elements = line1
-        .trim()
         .split_whitespace()
         .map(|x| x.trim().parse())
         .collect::<Result<Vec<_>, _>>()?;
@@ -664,7 +658,6 @@ fn meeting(function_name: &str, test: OldTest) -> Result<Test> {
     let t = elements[2];
 
     let a = rest
-        .trim()
         .split_whitespace()
         .map(|x| x.trim().parse())
         .collect::<Result<_, _>>()?;
@@ -696,7 +689,6 @@ fn meeting(function_name: &str, test: OldTest) -> Result<Test> {
 fn poker_hand(function_name: &str, test: OldTest) -> Result<Test> {
     let elements = test
         .input
-        .trim()
         .split_whitespace()
         .map(|x| x.trim().to_string())
         .collect::<Vec<_>>();

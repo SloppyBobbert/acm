@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     sync::{atomic::Ordering, Arc},
 };
 
@@ -9,6 +9,7 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
+use futures::{future::BoxFuture, stream::FuturesUnordered, StreamExt};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -19,7 +20,7 @@ use tokio::{
         broadcast::{self, Sender},
         mpsc, RwLock,
     },
-    task::JoinHandle,
+    task::JoinError,
     time::{sleep, Duration},
 };
 
@@ -141,8 +142,20 @@ async fn process_job(
 
     let res = queue_item.run(&ramiel_url, &pool, &broadcast).await;
 
+    finish_job(id, res, queued_jobs, broadcast).await;
+}
+
+async fn finish_job(
+    id: u64,
+    res: Result<Value, ServerError>,
+    queued_jobs: JobMap,
+    broadcast: broadcast::Sender<BroadcastMessage>,
+) {
     let mut job_map_writer = queued_jobs.write().await;
-    let job = job_map_writer.get_mut(&id).expect("Job missing in job map");
+    let Some(job) = job_map_writer.get_mut(&id) else {
+        log::warn!("Job {id} disappeared from job map before it finished");
+        return;
+    };
 
     log::info!("{res:?}");
 
@@ -151,23 +164,57 @@ async fn process_job(
             job.response = Some(res);
         }
         Err(ServerError::Runner(RunnerError::CompilationError { diagnostics })) => {
-            job.error = Some(serde_json::to_string(&diagnostics).unwrap())
+            job.error = Some(match serde_json::to_string(&diagnostics) {
+                Ok(diagnostics) => diagnostics,
+                Err(error) => {
+                    log::error!("error serializing compiler diagnostics for job {id}: {error}");
+                    ServerError::InternalError.to_string()
+                }
+            })
         }
         Err(e) => job.error = Some(e.to_string()),
     }
 
-    broadcast
-        .send(BroadcastMessage::FinishedJob(job.clone()))
-        .ok();
+    let job = job.clone();
+    drop(job_map_writer);
 
-    let job_map = queued_jobs.clone();
+    broadcast.send(BroadcastMessage::FinishedJob(job)).ok();
+
     // Set timeout to remove the job from the job map to prevent it from growing out of control
     tokio::spawn(async move {
         sleep(Duration::from_secs(10)).await;
 
-        job_map.write().await.remove(&id);
+        queued_jobs.write().await.remove(&id);
         log::info!("Job {id} purged from job map");
     });
+}
+
+type TaskCompletion = (u64, Result<(), JoinError>);
+
+fn start_task(
+    id: u64,
+    queue_item: JobQueueItem,
+    queued_jobs: JobMap,
+    ramiel_url: String,
+    pool: SqlitePool,
+    broadcast: broadcast::Sender<BroadcastMessage>,
+) -> BoxFuture<'static, TaskCompletion> {
+    let task = tokio::spawn(async move {
+        process_job(id, queue_item, queued_jobs, ramiel_url, pool, broadcast).await;
+    });
+
+    Box::pin(async move { (id, task.await) })
+}
+
+async fn observe_task(
+    (id, result): TaskCompletion,
+    queued_jobs: JobMap,
+    broadcast: broadcast::Sender<BroadcastMessage>,
+) {
+    if let Err(error) = result {
+        log::error!("job task {id} failed: {error}");
+        finish_job(id, Err(ServerError::InternalError), queued_jobs, broadcast).await;
+    }
 }
 
 pub async fn job_worker(
@@ -180,22 +227,48 @@ pub async fn job_worker(
 ) {
     log::info!("Started job worker");
 
-    let mut tasks: VecDeque<JoinHandle<()>> = VecDeque::with_capacity(parallel_job_count.into());
+    let max_parallel_jobs = usize::from(parallel_job_count.max(1));
+    let mut tasks = FuturesUnordered::new();
+    let mut receiver_open = true;
 
-    while let Some((id, queue_item)) = rx.recv().await {
-        if tasks.len() >= parallel_job_count.into() {
-            if let Some(task) = tasks.pop_front() {
-                task.await.unwrap();
+    while receiver_open || !tasks.is_empty() {
+        if !receiver_open || tasks.len() >= max_parallel_jobs {
+            if let Some(completion) = tasks.next().await {
+                observe_task(completion, queued_jobs.clone(), broadcast.clone()).await;
             }
+            continue;
         }
 
-        let ramiel_url = ramiel_url.clone();
-        let queued_jobs = queued_jobs.clone();
-        let broadcast = broadcast.clone();
-        let pool = pool.clone();
-        tasks.push_back(tokio::spawn(async move {
-            process_job(id, queue_item, queued_jobs, ramiel_url, pool, broadcast).await;
-        }));
+        if tasks.is_empty() {
+            match rx.recv().await {
+                Some((id, queue_item)) => tasks.push(start_task(
+                    id,
+                    queue_item,
+                    queued_jobs.clone(),
+                    ramiel_url.clone(),
+                    pool.clone(),
+                    broadcast.clone(),
+                )),
+                None => receiver_open = false,
+            }
+        } else {
+            tokio::select! {
+                Some(completion) = tasks.next() => {
+                    observe_task(completion, queued_jobs.clone(), broadcast.clone()).await;
+                }
+                job = rx.recv() => match job {
+                    Some((id, queue_item)) => tasks.push(start_task(
+                        id,
+                        queue_item,
+                        queued_jobs.clone(),
+                        ramiel_url.clone(),
+                        pool.clone(),
+                        broadcast.clone(),
+                    )),
+                    None => receiver_open = false,
+                },
+            }
+        }
     }
 }
 
@@ -205,4 +278,255 @@ pub fn routes() -> Router {
         .route("/generate-tests", post(generate_tests::generate_tests))
         .route("/submit", post(submit::submit))
         .route("/check/:id", get(check_job))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use tokio::{sync::Notify, time::timeout};
+
+    use super::*;
+
+    struct PanickingJob;
+
+    #[async_trait]
+    impl Queueable for PanickingJob {
+        async fn run(
+            &self,
+            _ramiel_url: &str,
+            _pool: &SqlitePool,
+            _broadcast: &broadcast::Sender<BroadcastMessage>,
+        ) -> Result<Value, ServerError> {
+            panic!("simulated worker failure");
+        }
+
+        fn info(&self) -> String {
+            "panicking test job".to_string()
+        }
+
+        fn job_type(&self) -> String {
+            "test".to_string()
+        }
+
+        fn problem_id(&self) -> i64 {
+            -1
+        }
+    }
+
+    struct SucceedingJob;
+
+    #[async_trait]
+    impl Queueable for SucceedingJob {
+        async fn run(
+            &self,
+            _ramiel_url: &str,
+            _pool: &SqlitePool,
+            _broadcast: &broadcast::Sender<BroadcastMessage>,
+        ) -> Result<Value, ServerError> {
+            Ok(json!("completed"))
+        }
+
+        fn info(&self) -> String {
+            "succeeding test job".to_string()
+        }
+
+        fn job_type(&self) -> String {
+            "test".to_string()
+        }
+
+        fn problem_id(&self) -> i64 {
+            -1
+        }
+    }
+
+    struct BlockingJob {
+        started: Arc<Notify>,
+        release: Arc<Notify>,
+    }
+
+    #[async_trait]
+    impl Queueable for BlockingJob {
+        async fn run(
+            &self,
+            _ramiel_url: &str,
+            _pool: &SqlitePool,
+            _broadcast: &broadcast::Sender<BroadcastMessage>,
+        ) -> Result<Value, ServerError> {
+            self.started.notify_one();
+            self.release.notified().await;
+            Ok(json!("completed"))
+        }
+
+        fn info(&self) -> String {
+            "blocking test job".to_string()
+        }
+
+        fn job_type(&self) -> String {
+            "test".to_string()
+        }
+
+        fn problem_id(&self) -> i64 {
+            -1
+        }
+    }
+
+    #[tokio::test]
+    async fn worker_observes_panicked_job_while_receiver_stays_open() {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let queued_jobs = Arc::new(RwLock::new(HashMap::new()));
+        queued_jobs.write().await.insert(
+            1,
+            JobStatus {
+                id: 1,
+                user_id: 1,
+                queue_position: 0,
+                job_type: "test".to_string(),
+                problem_id: -1,
+                response: None,
+                error: None,
+            },
+        );
+        let (broadcast, mut messages) = broadcast::channel(1);
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+        let worker = tokio::spawn(job_worker(
+            rx,
+            queued_jobs.clone(),
+            "http://127.0.0.1:1".to_string(),
+            pool,
+            broadcast,
+            1,
+        ));
+
+        tx.send((1, Box::new(PanickingJob) as JobQueueItem))
+            .unwrap();
+
+        assert!(matches!(
+            timeout(Duration::from_secs(1), messages.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            BroadcastMessage::FinishedJob(status) if status.id == 1
+        ));
+        let job = queued_jobs.read().await.get(&1).cloned().unwrap();
+        assert_eq!(job.error.as_deref(), Some("Internal server error."));
+
+        worker.abort();
+        let _ = worker.await;
+        drop(tx);
+    }
+
+    #[tokio::test]
+    async fn panicked_job_records_failure_and_worker_continues() {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let queued_jobs = Arc::new(RwLock::new(HashMap::new()));
+        queued_jobs.write().await.insert(
+            1,
+            JobStatus {
+                id: 1,
+                user_id: 1,
+                queue_position: 0,
+                job_type: "test".to_string(),
+                problem_id: -1,
+                response: None,
+                error: None,
+            },
+        );
+        queued_jobs.write().await.insert(
+            2,
+            JobStatus {
+                id: 2,
+                user_id: 1,
+                queue_position: 1,
+                job_type: "test".to_string(),
+                problem_id: -1,
+                response: None,
+                error: None,
+            },
+        );
+        let (broadcast, mut messages) = broadcast::channel(2);
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+
+        tx.send((1, Box::new(PanickingJob) as JobQueueItem))
+            .unwrap();
+        tx.send((2, Box::new(SucceedingJob) as JobQueueItem))
+            .unwrap();
+        drop(tx);
+
+        job_worker(
+            rx,
+            queued_jobs.clone(),
+            "http://127.0.0.1:1".to_string(),
+            pool,
+            broadcast,
+            1,
+        )
+        .await;
+
+        let job = queued_jobs.read().await.get(&1).cloned().unwrap();
+        assert_eq!(job.error.as_deref(), Some("Internal server error."));
+        assert!(job.response.is_none());
+        let succeeding_job = queued_jobs.read().await.get(&2).cloned().unwrap();
+        assert_eq!(succeeding_job.response, Some(json!("completed")));
+        assert!(matches!(
+            timeout(Duration::from_secs(1), messages.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            BroadcastMessage::FinishedJob(status) if status.id == 1
+        ));
+    }
+
+    #[tokio::test]
+    async fn worker_drains_trailing_task_before_receiver_close_returns() {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let queued_jobs = Arc::new(RwLock::new(HashMap::new()));
+        queued_jobs.write().await.insert(
+            1,
+            JobStatus {
+                id: 1,
+                user_id: 1,
+                queue_position: 0,
+                job_type: "test".to_string(),
+                problem_id: -1,
+                response: None,
+                error: None,
+            },
+        );
+        let (broadcast, _) = broadcast::channel(1);
+        let started = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let pool = SqlitePool::connect_lazy("sqlite::memory:").unwrap();
+
+        tx.send((
+            1,
+            Box::new(BlockingJob {
+                started: started.clone(),
+                release: release.clone(),
+            }) as JobQueueItem,
+        ))
+        .unwrap();
+        drop(tx);
+
+        let mut worker = tokio::spawn(job_worker(
+            rx,
+            queued_jobs.clone(),
+            "http://127.0.0.1:1".to_string(),
+            pool,
+            broadcast,
+            1,
+        ));
+        timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("trailing job should start");
+        assert!(timeout(Duration::from_millis(50), &mut worker)
+            .await
+            .is_err());
+
+        release.notify_one();
+        worker.await.unwrap();
+
+        let job = queued_jobs.read().await.get(&1).cloned().unwrap();
+        assert_eq!(job.response, Some(json!("completed")));
+        assert!(job.error.is_none());
+    }
 }
