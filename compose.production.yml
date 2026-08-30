@@ -47,6 +47,8 @@ services:
       DATABASE_URL: sqlite:///var/lib/acm/db.sqlite?mode=rwc
       RAMIEL_URL: http://ramiel:8082
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set}"
+      DISCORD_CLIENT_ID: "${DISCORD_CLIENT_ID:?DISCORD_CLIENT_ID must be set}"
+      DISCORD_REDIRECT_URI: "${DISCORD_REDIRECT_URI:?DISCORD_REDIRECT_URI must be set}"
       DISCORD_SECRET: "${DISCORD_SECRET:?DISCORD_SECRET must be set}"
       FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:?FRONTEND_ORIGIN must be set}"
       COOKIE_SECURE: "true"

@@ -10,9 +10,13 @@ use axum::{
 };
 use axum_extra::extract::CookieJar;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation};
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Type};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
 
 use crate::error::{AuthError, ServerError};
 
@@ -20,6 +24,7 @@ mod discord;
 
 pub fn routes() -> Router {
     Router::new()
+        .route("/discord/start", get(discord::start))
         .route("/discord", post(discord::login))
         .route("/logout", get(discord::logout))
 }
@@ -34,10 +39,35 @@ pub struct User {
     pub auth: Auth,
 }
 
-static KEYS: Lazy<Keys> = Lazy::new(|| {
-    let secret = std::env::var("JWT_SECRET").unwrap();
-    Keys::new(secret.as_bytes())
-});
+#[derive(Clone)]
+pub struct AuthState {
+    pub discord_client_id: String,
+    pub discord_client_secret: String,
+    pub discord_redirect_uri: String,
+    keys: Arc<Keys>,
+    pub oauth_states: Arc<Mutex<HashMap<[u8; 32], Instant>>>,
+}
+
+impl AuthState {
+    pub fn new(
+        discord_client_id: String,
+        discord_client_secret: String,
+        discord_redirect_uri: String,
+        jwt_secret: String,
+    ) -> Self {
+        Self {
+            discord_client_id,
+            discord_client_secret,
+            discord_redirect_uri,
+            keys: Arc::new(Keys::new(jwt_secret.as_bytes())),
+            oauth_states: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn encode_token(&self, claims: Claims) -> Result<String, ServerError> {
+        self.keys.encode_token(claims)
+    }
+}
 
 struct Keys {
     decoding: DecodingKey,
@@ -115,13 +145,19 @@ where
         };
 
         // Decode the user data
-        let token_data =
-            jsonwebtoken::decode::<Claims>(token, &KEYS.decoding, &Validation::default()).map_err(
-                |e| {
-                    log::error!("{e}");
-                    AuthError::InvalidToken
-                },
-            )?;
+        let auth_state = req
+            .extensions
+            .get::<AuthState>()
+            .ok_or(ServerError::InternalError)?;
+        let token_data = jsonwebtoken::decode::<Claims>(
+            token,
+            &auth_state.keys.decoding,
+            &Validation::default(),
+        )
+        .map_err(|e| {
+            log::error!("{e}");
+            AuthError::InvalidToken
+        })?;
 
         Ok(token_data.claims)
     }
