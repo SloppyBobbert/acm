@@ -63,6 +63,8 @@ Build production images on the deployment host with `compose.production.yml`; th
 
 Ramiel uses an amd64 WASI SDK package. On Apple Silicon, set `ACM_DOCKER_PLATFORM=linux/amd64`; for direct local Docker builds, also use `--platform linux/amd64 --provenance=false`.
 
+Production Caddy replaces `X-Forwarded-For` with the directly observed client address. The API trusts only Caddy's fixed private Docker address when applying OAuth-start limits. If a CDN or load balancer is added, redesign and configure trusted-proxy handling; do not accept arbitrary forwarded-address chains.
+
 See [deployment](deploy/README.md) for the production procedure.
 
 ## Troubleshooting

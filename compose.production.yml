@@ -11,7 +11,8 @@ services:
       - "80:80"
       - "443:443"
     networks:
-      - edge
+      edge:
+        ipv4_address: 172.30.0.2
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -42,7 +43,6 @@ services:
         ACM_DOCKER_PLATFORM: ${ACM_DOCKER_PLATFORM:-linux/amd64}
     restart: unless-stopped
     environment:
-      API_HOSTNAME: 0.0.0.0
       PORT: 8081
       DATABASE_URL: sqlite:///var/lib/acm/db.sqlite?mode=rwc
       RAMIEL_URL: http://ramiel:8082
@@ -52,6 +52,7 @@ services:
       DISCORD_SECRET: "${DISCORD_SECRET:?DISCORD_SECRET must be set}"
       FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:?FRONTEND_ORIGIN must be set}"
       COOKIE_SECURE: "true"
+      TRUSTED_PROXY_IP: 172.30.0.2
       PARALLEL_JOB_COUNT: ${PARALLEL_JOB_COUNT:-1}
     volumes:
       - ${ACM_DATA_DIR:-./.local/production-data}:/var/lib/acm
@@ -111,5 +112,9 @@ volumes:
 
 networks:
   edge:
+    ipam:
+      config:
+        # Private /24 reserved for the Caddy-to-server trust boundary.
+        - subnet: 172.30.0.0/24
   runner:
     internal: true

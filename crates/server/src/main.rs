@@ -319,6 +319,9 @@ struct Args {
 
     #[arg(env, long, value_parser = clap::value_parser!(bool))]
     cookie_secure: bool,
+
+    #[arg(env, hide = true)]
+    trusted_proxy_ip: Option<std::net::IpAddr>,
 }
 
 #[tokio::main]
@@ -448,6 +451,7 @@ async fn main() {
         args.discord_secret,
         discord_redirect_uri,
         args.jwt_secret,
+        args.trusted_proxy_ip,
     );
 
     let app = Router::new()
@@ -471,7 +475,7 @@ async fn main() {
         .layer(cors_layer(frontend_origin));
 
     Server::bind(&addr)
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .unwrap();
 }

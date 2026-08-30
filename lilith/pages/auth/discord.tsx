@@ -7,14 +7,32 @@ import { api_url } from "../../utils/fetcher";
 const DiscordAuth: NextPage = () => {
   const router = useRouter();
   const exchanged = useRef(false);
+  const callback = useRef<{
+    code: string | null;
+    state: string | null;
+    hasError: boolean;
+    hasCallbackParameters: boolean;
+  }>();
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    const fragment = new URLSearchParams(window.location.search);
-    const code = fragment.get('code');
-    const state = fragment.get('state');
+    if (!callback.current) {
+      const fragment = new URLSearchParams(window.location.search);
+      const code = fragment.get('code');
+      const state = fragment.get('state');
+      const hasError = fragment.has('error') || fragment.has('error_description');
 
-    if (!code || !state) {
+      callback.current = {
+        code,
+        state,
+        hasError,
+        hasCallbackParameters: code !== null || state !== null || hasError,
+      };
+    }
+
+    const { code, state, hasError, hasCallbackParameters } = callback.current;
+
+    if (!hasCallbackParameters) {
       router.replace("/");
       return;
     }
@@ -23,19 +41,32 @@ const DiscordAuth: NextPage = () => {
     exchanged.current = true;
 
     const cleanUrl = new URL(window.location.href);
-    cleanUrl.searchParams.delete("code");
-    cleanUrl.searchParams.delete("state");
+    ["code", "state", "error", "error_description"].forEach((parameter) => {
+      cleanUrl.searchParams.delete(parameter);
+    });
     window.history.replaceState(
       window.history.state,
       "",
       `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`
     );
 
+    if (hasError || !code || !state) {
+      setFailed(true);
+      exchanged.current = false;
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+
     const exchange = async () => {
       try {
+        if (cancelled) return;
+
         const response = await fetch(api_url("/auth/discord"), {
           method: "POST",
           credentials: "include",
+          signal: controller.signal,
           headers: {
             "Content-Type": "application/json",
           },
@@ -49,13 +80,23 @@ const DiscordAuth: NextPage = () => {
           throw new Error("Discord sign-in failed");
         }
 
-        router.replace("/");
+        if (!cancelled) {
+          router.replace("/");
+        }
       } catch {
-        setFailed(true);
+        if (!cancelled) {
+          setFailed(true);
+        }
       }
     };
 
-    void exchange();
+    void Promise.resolve().then(exchange);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      exchanged.current = false;
+    };
   }, [router]);
 
   if (failed) {

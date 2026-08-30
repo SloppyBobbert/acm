@@ -13,9 +13,8 @@ use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Type};
 use std::{
-    collections::HashMap,
+    net::IpAddr,
     sync::{Arc, Mutex},
-    time::Instant,
 };
 
 use crate::error::{AuthError, ServerError};
@@ -44,8 +43,9 @@ pub struct AuthState {
     pub discord_client_id: String,
     pub discord_client_secret: String,
     pub discord_redirect_uri: String,
+    pub trusted_proxy_ip: Option<IpAddr>,
     keys: Arc<Keys>,
-    pub oauth_states: Arc<Mutex<HashMap<[u8; 32], Instant>>>,
+    pub oauth_start_guard: Arc<Mutex<discord::OAuthStartGuard>>,
 }
 
 impl AuthState {
@@ -54,13 +54,17 @@ impl AuthState {
         discord_client_secret: String,
         discord_redirect_uri: String,
         jwt_secret: String,
+        trusted_proxy_ip: Option<IpAddr>,
     ) -> Self {
         Self {
             discord_client_id,
             discord_client_secret,
             discord_redirect_uri,
+            trusted_proxy_ip,
             keys: Arc::new(Keys::new(jwt_secret.as_bytes())),
-            oauth_states: Arc::new(Mutex::new(HashMap::new())),
+            oauth_start_guard: Arc::new(Mutex::new(discord::OAuthStartGuard::new(
+                std::time::Instant::now(),
+            ))),
         }
     }
 

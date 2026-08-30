@@ -49,6 +49,8 @@ docker compose --env-file deploy/.env.production -f compose.production.yml logs 
 
 Caddy obtains and serves TLS for `API_DOMAIN` after DNS and public ports are correct. `config --quiet` validates the resolved configuration without printing interpolated values, including secrets.
 
+The OAuth-start endpoint allows a global burst of 50 requests and refills five requests per second. Each client can burst five requests and refills one request every 30 seconds. Excess requests receive HTTP `429`, and the in-memory limits reset when the API process restarts. Caddy replaces `X-Forwarded-For` with the directly observed client address, and the API trusts only Caddy's fixed private Docker address. If you add a CDN or load balancer, redesign and configure trusted-proxy handling for that topology; do not accept arbitrary forwarded-address chains.
+
 ## First administrator
 
 After the stack starts and the server has completed its migrations, have the intended first operator sign in with Discord. This creates the operator's account as `MEMBER`. In Discord, open **User Settings > Advanced** and enable **Developer Mode**. Then right-click the intended account/user and choose **Copy User ID**. Verify the copied ID belongs to that signed-in account before running the bundled first-admin command from the repository root:
@@ -166,6 +168,7 @@ If a restore copy fails, leave the server stopped. First quarantine any partial 
 - Restrict `deploy/.env.production` with `chmod 600`; Docker access can read container environment secrets.
 - Use unique production values for `JWT_SECRET` and `DISCORD_SECRET`.
 - Set `FRONTEND_ORIGIN` to one exact HTTPS origin.
+- Do not add a CDN or load balancer without redesigning and configuring trusted-proxy handling; Caddy must not accept arbitrary `X-Forwarded-For` chains.
 - Expose only application ports 80 and 443; restrict administrative host access separately.
 - Back up `ACM_DATA_DIR` and protect backups as application data.
 - Keep Docker and the host patched.
