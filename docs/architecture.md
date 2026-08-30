@@ -14,7 +14,7 @@ Vercel frontend                 Caddy (public :80, :443)
                                            C++ -> WASI -> Wasmtime
 ```
 
-The frontend is deployed separately on Vercel. It calls the API URL and opens its WebSocket URL from `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`. Caddy terminates public traffic for the API domain and reverse-proxies it to `server`.
+The frontend is deployed separately and uses `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL` for API and WebSocket access. For Discord sign-in, it navigates to the API start endpoint. The API owns `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET`; no Discord OAuth value belongs in the frontend environment. Caddy terminates public traffic for the API domain and reverse-proxies it to `server`.
 
 The server owns authentication, competition data, and SQLite migrations. It sends compilation and execution requests to Ramiel over HTTP. Ramiel compiles C++ with the WASI SDK and executes the generated WebAssembly with Wasmtime.
 
@@ -28,6 +28,8 @@ The queue, job status map, counters, and broadcast channel are process-local. Re
 
 - Caddy is the only production container with public ports. The `runner` Docker network is internal; Ramiel is reachable only from the server.
 - The browser reaches Caddy, not the server or Ramiel directly. The API allows credentialed CORS requests only from `FRONTEND_ORIGIN`.
+- The login flow begins when the frontend navigates to the API start endpoint. The API creates a one-time state cookie that expires after five minutes and redirects to Discord. The callback posts its code and state to the API, which validates and consumes the state before exchanging the code.
+- Deploy the frontend and API under one registrable custom domain, such as `app.example.com` and `api.example.com`. Session cookies remain `SameSite=Lax`; a raw unrelated Vercel domain may be treated as a third party and blocked.
 - SQLite persists through the server's mounted data directory. It contains application data and must be backed up separately from containers.
 - Ramiel processes untrusted competition code. The production Compose file gives it a read-only root filesystem, a writable executable `/tmp` tmpfs, resource limits, and no public network attachment. Those limits reduce exposure; they are not a security guarantee beyond the configured container and runtime boundaries.
 
@@ -37,4 +39,4 @@ The queue, job status map, counters, and broadcast channel are process-local. Re
 - Production Ramiel is amd64 because the image installs the amd64 WASI SDK package.
 - The API health endpoint checks that the process responds; it does not prove a job can compile or execute.
 - Caddy proxies the API domain only. The frontend remains a separate Vercel deployment.
-- Discord sign-in redirect URIs are hard-coded: `https://chicoacm.org/auth/discord` in production and `http://localhost:3000/auth/discord` locally. Setting another `FRONTEND_ORIGIN` does not make sign-in support another frontend origin.
+- Discord requires `DISCORD_REDIRECT_URI` to use the normalized scheme, host, and effective port of `FRONTEND_ORIGIN`, with the `/auth/discord` path and no credentials, query, or fragment. Register that URI in the Discord application. Use HTTPS in production; HTTP is allowed only for insecure localhost development.

@@ -18,6 +18,16 @@ The server and Ramiel each expose `/healthz` inside the stack. Caddy's health ch
 
 All three Compose services use `restart: unless-stopped`. A server restart loses in-memory queued jobs, job status, and WebSocket broadcasts. Persistent SQLite data remains in `ACM_DATA_DIR`.
 
+## First administrator
+
+After deploying and starting the stack so migrations complete, the intended first operator must sign in with Discord before being promoted from `MEMBER`. In Discord, open **User Settings > Advanced** and enable **Developer Mode**. Then right-click the intended account/user and choose **Copy User ID**. Verify the copied ID belongs to that signed-in account before running:
+
+```sh
+docker compose --env-file deploy/.env.production -f compose.production.yml run --rm --no-deps server bootstrap-admin --database-url 'sqlite:///var/lib/acm/db.sqlite?mode=rw' --discord-id '<discord-id>'
+```
+
+The existing-file `mode=rw` URL does not create a database. The command creates no user, refuses missing or duplicate matches, and refuses once any administrator exists. Sign out and back in after promotion so the JWT reflects `ADMIN`.
+
 ## Backup and restore
 
 Stop the server before copying SQLite. For every backup, create a new empty, uniquely named directory outside `ACM_DATA_DIR`; copy `db.sqlite` and only WAL/SHM sidecars from that stopped-server session into it.
@@ -98,3 +108,5 @@ Monitor free space in `ACM_DATA_DIR` and Docker's storage area. SQLite lives in 
 - **Runner unhealthy or jobs fail:** inspect Ramiel logs and confirm the container is running on amd64. Check its `/tmp` capacity and configured resource limits.
 - **Jobs disappear after a restart:** this is expected: queue and status data are process-local. Retry the request after services recover.
 - **Frontend cannot authenticate or use the API:** verify the deployed frontend origin exactly matches `FRONTEND_ORIGIN`, and verify its API and WebSocket URLs use the public API domain.
+- **Discord sign-in fails:** verify the API has `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET`; `DISCORD_REDIRECT_URI` must use `FRONTEND_ORIGIN`'s normalized scheme, host, and effective port, with the exact `/auth/discord` path and no credentials, query, or fragment. Register it in Discord and use HTTPS in production. The frontend needs only its public API and WebSocket URLs and starts the flow by navigating to the API start endpoint.
+- **Login works locally but not in production:** use frontend and API hosts on one registrable custom domain, such as `app.example.com` and `api.example.com`. The session cookie is `SameSite=Lax`, and raw unrelated Vercel domains may be blocked as third parties.
