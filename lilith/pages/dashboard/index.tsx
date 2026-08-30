@@ -117,7 +117,15 @@ const DashboardPage: NextPage = () => {
         const client = new WebSocket(process.env.NEXT_PUBLIC_WS_URL!);
 
         client.addEventListener('message', (event) => {
-            const data: unknown = JSON.parse(event.data);
+            let parsed: unknown;
+
+            try {
+                parsed = JSON.parse(event.data);
+            } catch {
+                return;
+            }
+
+            const data = parsed;
 
             if (!isDashboardMessage(data)) return;
 
