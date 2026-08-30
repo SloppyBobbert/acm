@@ -4,6 +4,7 @@
 .env.local
 /deploy/.env.production
 /lilith/.env.local
+/lilith/.env.production
 .local/
 db.sqlite
 db.sqlite-shm

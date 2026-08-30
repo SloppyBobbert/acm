@@ -24,18 +24,3 @@ const nextConfig = withTM({
 });
 
 module.exports = nextConfig;
-
-/* int atoi2(char *str) {
-    bool neg = false;
-    if (*str == '-') {
-        str++;
-        neg = true;
-    }
-
-    int val = 0;
-    for(; *str; str++)
-        val = val*10 + *str - '0';
-
-    if (neg) return val * -1;
-    return val;
-} */
