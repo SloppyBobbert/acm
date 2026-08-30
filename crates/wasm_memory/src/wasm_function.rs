@@ -4,10 +4,21 @@ use wasmtime::*;
 
 use crate::{AllocatorFunc, WasmMemory};
 
+fn restore_fuel_after_bonus(fuel_before: u64, fuel_after: u64, requested_bonus: u64) -> u64 {
+    let granted_bonus = u64::MAX.saturating_sub(fuel_before).min(requested_bonus);
+    let fuel_with_bonus = fuel_before.saturating_add(granted_bonus);
+    let consumed = fuel_with_bonus.saturating_sub(fuel_after);
+    fuel_after.saturating_sub(granted_bonus.saturating_sub(consumed))
+}
+
 #[derive(thiserror::Error, Debug)]
 enum FunctionError {
     #[error("Expected a function with name \"{0}\", but it was not found.")]
-    NameNotFound(String),
+    NamedFunction(String),
+    #[error("Expected the required function export \"{0}\", but it was not found or had an incompatible type.")]
+    RequiredFunction(String),
+    #[error("Expected the required memory export \"{0}\", but it was not found.")]
+    Memory(String),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -93,7 +104,7 @@ impl FunctionValue {
             FunctionValue::Long(ContainerVariant::Grid(g)) => (g[0].len() * g.len()) as f32,
             FunctionValue::Long(ContainerVariant::Graph(g)) => g.len() as f32,
 
-            FunctionValue::Float(ContainerVariant::Single(s)) => s.abs() as f32,
+            FunctionValue::Float(ContainerVariant::Single(s)) => s.abs(),
             FunctionValue::Float(ContainerVariant::List(l)) => l.len() as f32,
             FunctionValue::Float(ContainerVariant::Grid(g)) => (g[0].len() * g.len()) as f32,
             FunctionValue::Float(ContainerVariant::Graph(g)) => g.len() as f32,
@@ -149,6 +160,8 @@ pub enum FunctionType {
 }
 
 impl FunctionType {
+    // Deserializes memory according to this type descriptor.
+    #[allow(clippy::wrong_self_convention)]
     fn from_memory<S>(
         &self,
         store: &mut Store<S>,
@@ -279,10 +292,10 @@ impl WasmFunctionCall {
     ) -> Result<(FunctionValue, u64)> {
         let allocator: AllocatorFunc = instance
             .get_typed_func(&mut store, "malloc")
-            .expect("Failed to get allocator");
+            .map_err(|_| FunctionError::RequiredFunction("malloc".to_string()))?;
         let memory = instance
             .get_memory(&mut store, "memory")
-            .expect("Failed to get memory");
+            .ok_or_else(|| FunctionError::Memory("memory".to_string()))?;
 
         memory.grow(&mut store, Self::PAGE_OFFSET as u64)?;
 
@@ -310,13 +323,16 @@ impl WasmFunctionCall {
                 results.push(Val::F64(0));
             }
 
-            _ => params.push(Val::I32(0 as i32)),
+            _ => params.push(Val::I32(0_i32)),
         }
 
         // because we need to allocate for some args, it's possible to improperly run out of fuel
         const ARG_ALLOC_FUEL_DEFAULT: u64 = 100_000_000_000;
         let fuel_before_arg_setup = store.get_fuel()?;
-        store.set_fuel(fuel_before_arg_setup + ARG_ALLOC_FUEL_DEFAULT)?;
+        let arg_setup_bonus = u64::MAX
+            .saturating_sub(fuel_before_arg_setup)
+            .min(ARG_ALLOC_FUEL_DEFAULT);
+        store.set_fuel(fuel_before_arg_setup.saturating_add(arg_setup_bonus))?;
 
         let init = instance.get_typed_func::<_, ()>(&mut store, "_initialize")?;
         init.call(&mut store, ())?;
@@ -342,10 +358,11 @@ impl WasmFunctionCall {
         }
 
         let fuel_after_arg_setup = store.get_fuel()?;
-        let consumed_for_args =
-            fuel_before_arg_setup + ARG_ALLOC_FUEL_DEFAULT - fuel_after_arg_setup;
-        let leftover_arg_fuel = ARG_ALLOC_FUEL_DEFAULT - consumed_for_args;
-        store.set_fuel(fuel_after_arg_setup - leftover_arg_fuel)?;
+        store.set_fuel(restore_fuel_after_bonus(
+            fuel_before_arg_setup,
+            fuel_after_arg_setup,
+            arg_setup_bonus,
+        ))?;
         let initial_fuel = store.get_fuel()?;
 
         let mut out_params = vec![];
@@ -389,7 +406,7 @@ impl WasmFunctionCall {
         }
 
         if !found_func {
-            return Err(FunctionError::NameNotFound(self.name.clone()).into());
+            return Err(FunctionError::NamedFunction(self.name.clone()).into());
         }
 
         let remaining_fuel = store.get_fuel()?;
@@ -427,7 +444,7 @@ impl WasmFunctionCall {
                 .from_memory(store, &memory, params[0].unwrap_i32() as usize)?,
         };
 
-        Ok((return_value, initial_fuel - remaining_fuel))
+        Ok((return_value, initial_fuel.saturating_sub(remaining_fuel)))
     }
 }
 
@@ -447,4 +464,57 @@ fn val_type_matches(expected: &ValType, actual: &ValType) -> bool {
             | (ValType::F32, ValType::F32)
             | (ValType::F64, ValType::F64)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn call() -> WasmFunctionCall {
+        WasmFunctionCall::new(
+            "answer",
+            vec![],
+            FunctionType::Int(ContainerVariantType::Single),
+        )
+    }
+
+    #[test]
+    fn call_reports_missing_allocator_export() {
+        let engine = Engine::default();
+        let module = Module::new(&engine, "(module (memory (export \"memory\") 1))").unwrap();
+        let mut store = Store::new(&engine, ());
+        let instance = Instance::new(&mut store, &module, &[]).unwrap();
+
+        let error = call().call(&mut store, &instance).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("required function export \"malloc\""));
+    }
+
+    #[test]
+    fn call_reports_missing_memory_export() {
+        let engine = Engine::default();
+        let module = Module::new(
+            &engine,
+            "(module (func (export \"malloc\") (param i32) (result i32) i32.const 0))",
+        )
+        .unwrap();
+        let mut store = Store::new(&engine, ());
+        let instance = Instance::new(&mut store, &module, &[]).unwrap();
+
+        let error = call().call(&mut store, &instance).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("required memory export \"memory\""));
+    }
+
+    #[test]
+    fn restoring_bonus_preserves_fuel_at_overflow_boundary() {
+        assert_eq!(
+            restore_fuel_after_bonus(u64::MAX - 5, u64::MAX - 2, 100),
+            u64::MAX - 5
+        );
+    }
 }

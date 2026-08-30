@@ -1,6 +1,6 @@
 use axum::{extract::Path, Extension, Json};
 use serde::Serialize;
-use sqlx::{SqlitePool};
+use sqlx::SqlitePool;
 
 use crate::{auth::Claims, error::ServerError};
 

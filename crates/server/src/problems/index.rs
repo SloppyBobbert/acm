@@ -6,16 +6,11 @@ use crate::{auth::Claims, error::ServerError, pagination::Pagination};
 
 use super::Problem;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 enum ProblemOrdering {
+    #[default]
     Newest,
     Oldest,
-}
-
-impl Default for ProblemOrdering {
-    fn default() -> Self {
-        Self::Newest
-    }
 }
 
 #[derive(Deserialize)]
@@ -47,7 +42,7 @@ pub async fn problems(
     if let Some(query) = options.query {
         // query cleaning
         let mut new_query = String::new();
-        new_query.push_str("\"");
+        new_query.push('"');
         new_query.push_str(&query.replace("\"", "\"\""));
         new_query.push_str("\"*");
 
@@ -129,17 +124,15 @@ pub async fn problems(
 
     if has_query {
         query_builder.push(" ORDER BY rank ");
+    } else if options.competition_id.is_some() {
+        query_builder.push(" ORDER BY title ");
     } else {
-        if options.competition_id.is_some() {
-            query_builder.push(" ORDER BY title ");
-        } else {
-            match options.sort_by {
-                ProblemOrdering::Newest => {
-                    query_builder.push(" ORDER BY create_dt DESC ");
-                }
-                ProblemOrdering::Oldest => {
-                    query_builder.push(" ORDER BY create_dt ASC ");
-                }
+        match options.sort_by {
+            ProblemOrdering::Newest => {
+                query_builder.push(" ORDER BY create_dt DESC ");
+            }
+            ProblemOrdering::Oldest => {
+                query_builder.push(" ORDER BY create_dt ASC ");
             }
         }
     }

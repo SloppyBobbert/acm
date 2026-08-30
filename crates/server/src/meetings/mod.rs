@@ -20,18 +20,14 @@ pub struct Meeting {
     meeting_time: NaiveDateTime,
 }
 
-#[derive(Deserialize, Serialize, Type)]
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Deserialize, Serialize, Type, Default)]
 #[sqlx(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ActivityType {
+    #[default]
     SOLO,
     PAIR,
     LECT,
-}
-
-impl Default for ActivityType {
-    fn default() -> Self {
-        ActivityType::SOLO
-    }
 }
 
 #[derive(Serialize, Deserialize)]

@@ -13,7 +13,7 @@ pub async fn me(
     Path(competition_id): Path<i64>,
     Extension(pool): Extension<SqlitePool>,
 ) -> Result<Json<Option<Team>>, ServerError> {
-    if let None = claims.validate_logged_in().ok() {
+    if claims.validate_logged_in().is_err() {
         return Ok(Json(None));
     };
 

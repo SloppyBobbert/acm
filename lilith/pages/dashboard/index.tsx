@@ -85,6 +85,29 @@ type Job = {
     queue_position?: number,
 };
 
+type DashboardMessage =
+    | { NewJob: Job & { id: number } }
+    | { FinishedJob: Job & { id: number } }
+    | { NewCompletion: Submission };
+
+function isDashboardMessage(value: unknown): value is DashboardMessage {
+    if (typeof value !== "object" || value === null) return false;
+
+    const isMessagePayload = (payload: unknown, isJob: boolean): boolean =>
+        typeof payload === "object" &&
+        payload !== null &&
+        "id" in payload && typeof payload.id === "number" &&
+        "problem_id" in payload && typeof payload.problem_id === "number" &&
+        "user_id" in payload && typeof payload.user_id === "number" &&
+        (!isJob || ("job_type" in payload && typeof payload.job_type === "string"));
+
+    return (
+        ("NewJob" in value && isMessagePayload(value.NewJob, true)) ||
+        ("FinishedJob" in value && isMessagePayload(value.FinishedJob, true)) ||
+        ("NewCompletion" in value && isMessagePayload(value.NewCompletion, false))
+    );
+}
+
 const DashboardPage: NextPage = () => {
     const [completions, setCompletions] = useState<Submission[]>([]);
     const [pendingJobs, setPendingJobs] = useState<Map<number, Job>>(new Map);
@@ -93,15 +116,20 @@ const DashboardPage: NextPage = () => {
     useEffect(() => {
         const client = new WebSocket(process.env.NEXT_PUBLIC_WS_URL!);
 
-        console.log("Creating client");
-
-        // fuck me i'm just using any here and there's nothing you can do to stop
-        // me.
         client.addEventListener('message', (event) => {
-            let data = JSON.parse(event.data);
+            let parsed: unknown;
 
-            if (data.NewJob) {
-                console.log(data.NewJob);
+            try {
+                parsed = JSON.parse(event.data);
+            } catch {
+                return;
+            }
+
+            const data = parsed;
+
+            if (!isDashboardMessage(data)) return;
+
+            if ("NewJob" in data) {
                 const newJob: Job = {
                     job_type: data.NewJob.job_type,
                     problem_id: data.NewJob.problem_id,
@@ -112,7 +140,7 @@ const DashboardPage: NextPage = () => {
                 setPendingJobs(oldJobs =>
                     new Map(oldJobs.set(data.NewJob.id, newJob))
                 );
-            } else if (data.FinishedJob) {
+            } else if ("FinishedJob" in data) {
                 const newJob: Job = {
                     job_type: data.FinishedJob.job_type,
                     problem_id: data.FinishedJob.problem_id,
@@ -125,13 +153,12 @@ const DashboardPage: NextPage = () => {
                 });
                 setFinishedJobs(oldJobs => [newJob, ...oldJobs]);
 
-            } else if (data.NewCompletion) {
+            } else if ("NewCompletion" in data) {
                 setCompletions(oldCompletions => [data.NewCompletion, ...oldCompletions]);
             }
         });
 
         return () => {
-            console.log("Destroying client");
             client.close();
         };
     }, []);

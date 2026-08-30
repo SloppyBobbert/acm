@@ -58,12 +58,12 @@ where
             &mut data,
         );
 
-        memory.write(&mut store, vec_address as usize, &data)?;
+        memory.write(&mut store, vec_address, &data)?;
 
         // this setup basically results in a tree being created
         for (i, element) in self.into_iter().enumerate() {
             element.into_memory(
-                &mut store,
+                store,
                 memory,
                 allocator,
                 Some(buffer_address + i * T::CPP_SIZE_OF),
@@ -84,7 +84,7 @@ where
         let mut result = vec![];
 
         for child_offset in (start..end).step_by(T::CPP_SIZE_OF) {
-            result.push(T::from_memory(&mut store, &memory, child_offset as usize)?);
+            result.push(T::from_memory(store, memory, child_offset as usize)?);
         }
 
         Ok(result)
@@ -116,7 +116,7 @@ impl WasmMemory for String {
         //
         // Capacity is guaranteed to be divisible by two so if the length is odd we add two,
         // otherwise we add one. We also need to count the null terminator for the capacity.
-        let capacity = if (length + 1) % 2 == 0 {
+        let capacity = if (length + 1).is_multiple_of(2) {
             (length + 1) | (1 << 31)
         } else {
             (length + 2) | (1 << 31)
@@ -141,8 +141,8 @@ impl WasmMemory for String {
         );
 
         memory.write(&mut store, address, &data)?;
-        memory.write(&mut store, buffer_address, &bytes)?;
-        memory.write(&mut store, buffer_address + bytes.len(), &[b'\0'])?;
+        memory.write(&mut store, buffer_address, bytes)?;
+        memory.write(&mut store, buffer_address + bytes.len(), b"\0")?;
 
         Ok(address)
     }
@@ -155,7 +155,7 @@ impl WasmMemory for String {
         // if small string
         if buf[11] & 0b1000_0000 == 0 {
             // read bytes until we reach a null terminator in the small string case
-            let length = buf.iter().position(|b| *b == '\0' as u8).unwrap();
+            let length = buf.iter().position(|b| *b == b'\0').unwrap();
 
             Ok(String::from_utf8_lossy(&buf[0..length]).to_string())
         } else {
@@ -193,15 +193,15 @@ where
                 .unwrap() as usize
         });
 
-        self.0.into_memory(&mut store, memory, allocator, Some(address))?;
-        self.1.into_memory(&mut store, memory, allocator, Some(address + A::CPP_SIZE_OF))?;
+        self.0.into_memory(store, memory, allocator, Some(address))?;
+        self.1.into_memory(store, memory, allocator, Some(address + A::CPP_SIZE_OF))?;
 
         Ok(address)
     }
 
-    fn from_memory<S>(mut store: &mut Store<S>, memory: &Memory, offset: usize) -> Result<Self> {
-        let a = A::from_memory(&mut store, &memory, offset)?;
-        let b = B::from_memory(&mut store, &memory, offset + A::CPP_SIZE_OF)?;
+    fn from_memory<S>(store: &mut Store<S>, memory: &Memory, offset: usize) -> Result<Self> {
+        let a = A::from_memory(store, memory, offset)?;
+        let b = B::from_memory(store, memory, offset + A::CPP_SIZE_OF)?;
 
         Ok((a, b))
     }
@@ -497,7 +497,7 @@ mod tests {
     fn pair() -> Result<()> {
         let (mut store, memory, allocator) = test_setup()?;
 
-        let initial = (69, 3.14159);
+        let initial = (69, std::f32::consts::PI);
 
         let address = initial.into_memory(&mut store, &memory, &allocator, None)?;
 
