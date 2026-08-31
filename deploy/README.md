@@ -17,7 +17,15 @@ Copy the production example outside version control and supply each required val
 cp deploy/.env.production.example deploy/.env.production
 ```
 
-Set `API_DOMAIN`, `FRONTEND_ORIGIN`, `JWT_SECRET`, and `DISCORD_SECRET`. Generate a long, unique `JWT_SECRET`. `ACM_DATA_DIR` defaults to `./.local/production-data`; choose a persistent host path if needed. `PARALLEL_JOB_COUNT` defaults to `1` and must be at least `1` (`0` parses but is unsupported).
+Set `API_DOMAIN`, `FRONTEND_ORIGIN`, `JWT_SECRET`, `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET`. Generate a long, unique `JWT_SECRET`. `ACM_DATA_DIR` defaults to `./.local/production-data`; choose a persistent host path if needed. `PARALLEL_JOB_COUNT` defaults to `1` and must be at least `1` (`0` parses but is unsupported).
+
+Set `DISCORD_REDIRECT_URI` with the normalized scheme, host, and effective port of `FRONTEND_ORIGIN`, the `/auth/discord` path, and no credentials, query, or fragment. Register that URI in the Discord application. Production uses HTTPS; HTTP is allowed only for insecure localhost development. Restrict the environment file after creating it:
+
+```sh
+chmod 600 deploy/.env.production
+```
+
+Anyone with Docker access can read container environment secrets, including this file's values.
 
 The server runs as UID/GID `10001`, so root privilege is required to create the selected data directory with the right ownership before the first start:
 
@@ -41,16 +49,30 @@ docker compose --env-file deploy/.env.production -f compose.production.yml logs 
 
 Caddy obtains and serves TLS for `API_DOMAIN` after DNS and public ports are correct. `config --quiet` validates the resolved configuration without printing interpolated values, including secrets.
 
-## Vercel
+The OAuth-start endpoint allows a global burst of 50 requests and refills five requests per second. Each client can burst five requests and refills one request every 30 seconds. Excess requests receive HTTP `429`, and the in-memory limits reset when the API process restarts. Caddy replaces `X-Forwarded-For` with the directly observed client address, and the API trusts only Caddy's fixed private Docker address. If you add a CDN or load balancer, redesign and configure trusted-proxy handling for that topology; do not accept arbitrary forwarded-address chains.
 
-Configure the frontend build environment with public URLs for the API domain:
+## First administrator
+
+After the stack starts and the server has completed its migrations, have the intended first operator sign in with Discord. This creates the operator's account as `MEMBER`. In Discord, open **User Settings > Advanced** and enable **Developer Mode**. Then right-click the intended account/user and choose **Copy User ID**. Verify the copied ID belongs to that signed-in account before running the bundled first-admin command from the repository root:
+
+```sh
+docker compose --env-file deploy/.env.production -f compose.production.yml run --rm --no-deps server bootstrap-admin --database-url 'sqlite:///var/lib/acm/db.sqlite?mode=rw' --discord-id '<discord-id>'
+```
+
+The `mode=rw` URL requires the mounted database to already exist; it does not create one. The command creates no user, promotes only the selected existing account, and is first-admin-only: it refuses missing or duplicate user matches and refuses to run once any administrator exists. Sign out and sign back in after a successful promotion so the new JWT reflects `ADMIN`.
+
+## Frontend deployment
+
+Configure the frontend build environment with public API and WebSocket URLs only:
 
 ```text
 NEXT_PUBLIC_API_URL=https://api.example.com
 NEXT_PUBLIC_WS_URL=wss://api.example.com/ws
 ```
 
-Replace `api.example.com` with `API_DOMAIN`. Set `FRONTEND_ORIGIN` in the deployment env file to the exact Vercel or custom frontend origin for CORS. **Current limitation:** production Discord sign-in redirects are hard-coded to `https://chicoacm.org/auth/discord`; arbitrary production frontend origins are not supported for sign-in by configuration alone. Do not rely on a Discord dashboard redirect change to alter this behavior.
+Replace `api.example.com` with `API_DOMAIN`. Set `FRONTEND_ORIGIN` to the frontend origin for credentialed CORS. The frontend navigates to the API start endpoint; it does not need Discord OAuth values. Set `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET` only on the API host. `DISCORD_REDIRECT_URI` must use the normalized scheme, host, and effective port of `FRONTEND_ORIGIN`, with the `/auth/discord` path and no credentials, query, or fragment; register it in Discord. Rebuild and redeploy the frontend after changing its public API or WebSocket URL. Never put secrets in `NEXT_PUBLIC_*` variables.
+
+Use a shared registrable custom domain for the frontend and API, such as `app.example.com` and `api.example.com`. The session cookie remains `SameSite=Lax`; a raw, unrelated Vercel domain can be blocked by third-party-cookie policies.
 
 ## Smoke tests
 
@@ -143,8 +165,10 @@ If a restore copy fails, leave the server stopped. First quarantine any partial 
 ## Security checklist
 
 - Keep `deploy/.env.production` private and out of Git.
+- Restrict `deploy/.env.production` with `chmod 600`; Docker access can read container environment secrets.
 - Use unique production values for `JWT_SECRET` and `DISCORD_SECRET`.
 - Set `FRONTEND_ORIGIN` to one exact HTTPS origin.
+- Do not add a CDN or load balancer without redesigning and configuring trusted-proxy handling; Caddy must not accept arbitrary `X-Forwarded-For` chains.
 - Expose only application ports 80 and 443; restrict administrative host access separately.
 - Back up `ACM_DATA_DIR` and protect backups as application data.
 - Keep Docker and the host patched.

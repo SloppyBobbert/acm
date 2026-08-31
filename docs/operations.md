@@ -18,6 +18,20 @@ The server and Ramiel each expose `/healthz` inside the stack. Caddy's health ch
 
 All three Compose services use `restart: unless-stopped`. A server restart loses in-memory queued jobs, job status, and WebSocket broadcasts. Persistent SQLite data remains in `ACM_DATA_DIR`.
 
+## OAuth-start limits
+
+The OAuth-start endpoint allows a global burst of 50 requests and refills five requests per second. Each client can burst five requests and refills one request every 30 seconds. Requests over either limit receive HTTP `429`; reduce retries and investigate abusive or misconfigured clients. Client tracking is capped at `CLIENT_CAPACITY` 4096; saturation returns `429` with `Retry-After: 600`. Pending OAuth state is capped at `STATE_CAPACITY` 2048; saturation returns `429` with `Retry-After: 1`. The limits and both capacities are process-local and reset when the API restarts. Caddy replaces `X-Forwarded-For` with the directly observed client address, and the server trusts only Caddy's fixed `172.30.0.2` address on the private edge network. If a CDN or load balancer is added, redesign and configure trusted-proxy handling instead of accepting arbitrary forwarded-address chains.
+
+## First administrator
+
+After deploying and starting the stack so migrations complete, the intended first operator must sign in with Discord before being promoted from `MEMBER`. In Discord, open **User Settings > Advanced** and enable **Developer Mode**. Then right-click the intended account/user and choose **Copy User ID**. Verify the copied ID belongs to that signed-in account before running:
+
+```sh
+docker compose --env-file deploy/.env.production -f compose.production.yml run --rm --no-deps server bootstrap-admin --database-url 'sqlite:///var/lib/acm/db.sqlite?mode=rw' --discord-id '<discord-id>'
+```
+
+The existing-file `mode=rw` URL does not create a database. The command creates no user, refuses missing or duplicate matches, and refuses once any administrator exists. Sign out and back in after promotion so the JWT reflects `ADMIN`.
+
 ## Backup and restore
 
 Stop the server before copying SQLite. For every backup, create a new empty, uniquely named directory outside `ACM_DATA_DIR`; copy `db.sqlite` and only WAL/SHM sidecars from that stopped-server session into it.
@@ -98,3 +112,6 @@ Monitor free space in `ACM_DATA_DIR` and Docker's storage area. SQLite lives in 
 - **Runner unhealthy or jobs fail:** inspect Ramiel logs and confirm the container is running on amd64. Check its `/tmp` capacity and configured resource limits.
 - **Jobs disappear after a restart:** this is expected: queue and status data are process-local. Retry the request after services recover.
 - **Frontend cannot authenticate or use the API:** verify the deployed frontend origin exactly matches `FRONTEND_ORIGIN`, and verify its API and WebSocket URLs use the public API domain.
+- **Discord sign-in fails:** verify the API has `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET`; `DISCORD_REDIRECT_URI` must use `FRONTEND_ORIGIN`'s normalized scheme, host, and effective port, with the exact `/auth/discord` path and no credentials, query, or fragment. Register it in Discord and use HTTPS in production. The frontend needs only its public API and WebSocket URLs and starts the flow by navigating to the API start endpoint.
+- **Login works locally but not in production:** use frontend and API hosts on one registrable custom domain, such as `app.example.com` and `api.example.com`. The session cookie is `SameSite=Lax`, and raw unrelated Vercel domains may be blocked as third parties.
+- **OAuth start returns `429`:** reduce retries and check for abusive or misconfigured clients. `Retry-After: 600` indicates client-tracking capacity saturation. `Retry-After: 1` can indicate global-bucket exhaustion or pending OAuth-state capacity saturation; other per-client and global limits return dynamic retry values. Limits and capacities reset on API restart. If a CDN or load balancer was added, review the trusted-proxy design rather than accepting its forwarded-address chain by default.

@@ -8,8 +8,9 @@ COPY . .
 RUN --mount=type=cache,id=cargo-registry-rust-1.92-${TARGETARCH},target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cargo-git-rust-1.92-${TARGETARCH},target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,id=acm-target-rust-1.92-${TARGETARCH},target=/app/target,sharing=locked \
-    cargo build --release --locked --package server && \
-    cp /app/target/release/server /tmp/server
+    cargo build --release --locked --package server --bin server --bin bootstrap-admin && \
+    cp /app/target/release/server /tmp/server && \
+    cp /app/target/release/bootstrap-admin /tmp/bootstrap-admin
 
 FROM --platform=$ACM_DOCKER_PLATFORM debian:bullseye-slim AS runtime
 
@@ -22,6 +23,7 @@ RUN apt-get update && \
     chown acm:acm /var/lib/acm
 
 COPY --from=builder /tmp/server /usr/local/bin/server
+COPY --from=builder /tmp/bootstrap-admin /usr/local/bin/bootstrap-admin
 
 USER 10001:10001
 

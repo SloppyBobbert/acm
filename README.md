@@ -44,7 +44,7 @@ SQLX_OFFLINE=true cargo run -p server -- --hostname 127.0.0.1 --port 8081
 cd lilith && corepack yarn dev
 ```
 
-Set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL` if they differ from the local defaults. **Current limitation:** Discord sign-in uses `http://localhost:3000/auth/discord` locally, so local sign-in requires `FRONTEND_ORIGIN=http://localhost:3000`; the current example's `127.0.0.1` default does not support local sign-in.
+Set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL` if they differ from the local defaults. The frontend uses the API URL to start Discord sign-in; keep `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET` in the server environment only. `DISCORD_REDIRECT_URI` must use the normalized scheme, host, and effective port of `FRONTEND_ORIGIN`, with the `/auth/discord` path and no credentials, query, or fragment. Register that URI in Discord. Use HTTPS in production; HTTP is allowed only for insecure localhost development.
 
 Check the local services at their default addresses:
 
@@ -63,6 +63,8 @@ Build production images on the deployment host with `compose.production.yml`; th
 
 Ramiel uses an amd64 WASI SDK package. On Apple Silicon, set `ACM_DOCKER_PLATFORM=linux/amd64`; for direct local Docker builds, also use `--platform linux/amd64 --provenance=false`.
 
+Production Caddy replaces `X-Forwarded-For` with the directly observed client address. The API trusts only Caddy's fixed private Docker address when applying OAuth-start limits. If a CDN or load balancer is added, redesign and configure trusted-proxy handling; do not accept arbitrary forwarded-address chains.
+
 See [deployment](deploy/README.md) for the production procedure.
 
 ## Troubleshooting
@@ -71,6 +73,7 @@ See [deployment](deploy/README.md) for the production procedure.
 - Host-native Ramiel requires `/opt/wasi-sdk/bin/clang++`. Use the container when that path is unavailable.
 - On Apple Silicon, confirm the amd64 platform setting before building Ramiel.
 - `FRONTEND_ORIGIN` must be a complete `http` or `https` origin with no path or query.
+- Deploy the frontend and API on a shared registrable custom domain, such as `app.example.com` and `api.example.com`. Their session cookie uses `SameSite=Lax`; unrelated Vercel domains can be blocked by third-party-cookie policies.
 
 ## Further documentation
 

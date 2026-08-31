@@ -15,6 +15,7 @@ use axum::{
 use clap::Parser;
 use sqlx::SqlitePool;
 use tower_http::cors::{AllowOrigin, CorsLayer};
+use url::Url;
 
 use crate::{
     problems::{Difficulty, Problem},
@@ -79,8 +80,45 @@ fn cors_layer(frontend_origin: HeaderValue) -> CorsLayer {
         .allow_headers([CONTENT_TYPE])
 }
 
+fn validate_discord_redirect_uri(
+    redirect_uri: &str,
+    frontend_origin: &str,
+    cookie_secure: bool,
+) -> Result<String, String> {
+    let redirect = Url::parse(redirect_uri)
+        .map_err(|_| "DISCORD_REDIRECT_URI must be a valid URL".to_string())?;
+    let frontend = Url::parse(frontend_origin)
+        .map_err(|_| "FRONTEND_ORIGIN must be a valid HTTP origin".to_string())?;
+    if redirect.origin() != frontend.origin()
+        || redirect.path() != "/auth/discord"
+        || !redirect.username().is_empty()
+        || redirect.password().is_some()
+        || redirect.query().is_some()
+        || redirect.fragment().is_some()
+    {
+        return Err("DISCORD_REDIRECT_URI must be /auth/discord on FRONTEND_ORIGIN without credentials, query, or fragment".to_string());
+    }
+    if cookie_secure && redirect.scheme() != "https" {
+        return Err("DISCORD_REDIRECT_URI must use HTTPS when COOKIE_SECURE is true".to_string());
+    }
+    if !cookie_secure && redirect.scheme() == "http" {
+        let local = matches!(
+            redirect.host_str(),
+            Some("localhost") | Some("127.0.0.1") | Some("[::1]")
+        ) || matches!(redirect.host(), Some(url::Host::Ipv6(address)) if address.is_loopback());
+        if !local {
+            return Err("HTTP DISCORD_REDIRECT_URI is only allowed for localhost".to_string());
+        }
+    } else if redirect.scheme() != "https" {
+        return Err("DISCORD_REDIRECT_URI must use HTTP or HTTPS".to_string());
+    }
+    Ok(redirect.into())
+}
+
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
     use super::*;
     use axum::{
         body::Body,
@@ -88,11 +126,65 @@ mod tests {
     };
     use tower::ServiceExt;
 
+    struct EnvironmentGuard(Vec<(&'static str, Option<OsString>)>);
+
+    impl EnvironmentGuard {
+        fn set(values: &[(&'static str, &'static str)]) -> Self {
+            let previous = values
+                .iter()
+                .map(|(key, _)| (*key, std::env::var_os(key)))
+                .collect();
+
+            for (key, value) in values {
+                std::env::set_var(key, value);
+            }
+
+            Self(previous)
+        }
+    }
+
+    impl Drop for EnvironmentGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.0 {
+                if let Some(value) = value {
+                    std::env::set_var(key, value);
+                } else {
+                    std::env::remove_var(key);
+                }
+            }
+        }
+    }
+
     #[test]
     fn cli_definition_is_valid() {
         use clap::CommandFactory;
 
         Args::command().debug_assert();
+    }
+
+    #[test]
+    fn accepts_explicit_discord_oauth_flags() {
+        let _environment = EnvironmentGuard::set(&[
+            ("JWT_SECRET", "test-jwt-secret"),
+            ("DISCORD_SECRET", "test-discord-secret"),
+            ("FRONTEND_ORIGIN", "https://acm.example.com"),
+            ("COOKIE_SECURE", "false"),
+        ]);
+
+        let args = Args::try_parse_from([
+            "server",
+            "--discord-client-id",
+            "test-client-id",
+            "--discord-redirect-uri",
+            "https://acm.example.com/auth/discord",
+        ])
+        .unwrap();
+
+        assert_eq!(args.discord_client_id, "test-client-id");
+        assert_eq!(
+            args.discord_redirect_uri,
+            "https://acm.example.com/auth/discord"
+        );
     }
 
     #[test]
@@ -112,6 +204,34 @@ mod tests {
         assert!(frontend_origin("not an origin").is_err());
         assert!(frontend_origin("https://acm.example.com/path").is_err());
         assert!(frontend_origin("ftp://acm.example.com").is_err());
+    }
+
+    #[test]
+    fn validates_discord_redirect_uri() {
+        assert!(validate_discord_redirect_uri(
+            "https://acm.example.com/auth/discord",
+            "https://acm.example.com",
+            true,
+        )
+        .is_ok());
+        assert!(validate_discord_redirect_uri(
+            "https://acm.example.com/other",
+            "https://acm.example.com",
+            true,
+        )
+        .is_err());
+        assert!(validate_discord_redirect_uri(
+            "http://attacker.example.com/auth/discord",
+            "http://attacker.example.com",
+            false,
+        )
+        .is_err());
+        assert!(validate_discord_redirect_uri(
+            "http://localhost/auth/discord",
+            "http://localhost",
+            false,
+        )
+        .is_ok());
     }
 
     #[tokio::test]
@@ -188,11 +308,20 @@ struct Args {
     #[arg(env)]
     discord_secret: String,
 
+    #[arg(env, long)]
+    discord_client_id: String,
+
+    #[arg(env, long)]
+    discord_redirect_uri: String,
+
     #[arg(env)]
     frontend_origin: String,
 
     #[arg(env, long, value_parser = clap::value_parser!(bool))]
     cookie_secure: bool,
+
+    #[arg(env, hide = true)]
+    trusted_proxy_ip: Option<std::net::IpAddr>,
 }
 
 #[tokio::main]
@@ -200,6 +329,15 @@ async fn main() {
     let args = Args::parse();
     let frontend_origin = frontend_origin(&args.frontend_origin).unwrap_or_else(|error| {
         eprintln!("Invalid FRONTEND_ORIGIN: {error}");
+        exit(2);
+    });
+    let discord_redirect_uri = validate_discord_redirect_uri(
+        &args.discord_redirect_uri,
+        &args.frontend_origin,
+        args.cookie_secure,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("Invalid DISCORD_REDIRECT_URI: {error}");
         exit(2);
     });
 
@@ -308,6 +446,14 @@ async fn main() {
     let addr = SocketAddr::new(args.hostname.parse().unwrap(), args.port);
     tracing::info!("Started server on {addr}");
 
+    let auth_state = auth::AuthState::new(
+        args.discord_client_id,
+        args.discord_secret,
+        discord_redirect_uri,
+        args.jwt_secret,
+        args.trusted_proxy_ip,
+    );
+
     let app = Router::new()
         .route("/healthz", get(healthz))
         .nest("/auth", auth::routes())
@@ -325,10 +471,11 @@ async fn main() {
         .layer(Extension(broadcast))
         .layer(Extension(job_queue))
         .layer(Extension(args.cookie_secure))
+        .layer(Extension(auth_state))
         .layer(cors_layer(frontend_origin));
 
     Server::bind(&addr)
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .unwrap();
 }

@@ -10,9 +10,12 @@ use axum::{
 };
 use axum_extra::extract::CookieJar;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation};
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, Type};
+use std::{
+    net::IpAddr,
+    sync::{Arc, Mutex},
+};
 
 use crate::error::{AuthError, ServerError};
 
@@ -20,6 +23,7 @@ mod discord;
 
 pub fn routes() -> Router {
     Router::new()
+        .route("/discord/start", get(discord::start))
         .route("/discord", post(discord::login))
         .route("/logout", get(discord::logout))
 }
@@ -34,10 +38,47 @@ pub struct User {
     pub auth: Auth,
 }
 
-static KEYS: Lazy<Keys> = Lazy::new(|| {
-    let secret = std::env::var("JWT_SECRET").unwrap();
-    Keys::new(secret.as_bytes())
-});
+#[derive(Clone)]
+pub struct AuthState {
+    pub discord_client_id: String,
+    pub discord_client_secret: String,
+    pub discord_redirect_uri: String,
+    pub discord_client: reqwest::Client,
+    pub trusted_proxy_ip: Option<IpAddr>,
+    keys: Arc<Keys>,
+    pub oauth_start_guard: Arc<Mutex<discord::OAuthStartGuard>>,
+}
+
+impl AuthState {
+    pub fn new(
+        discord_client_id: String,
+        discord_client_secret: String,
+        discord_redirect_uri: String,
+        jwt_secret: String,
+        trusted_proxy_ip: Option<IpAddr>,
+    ) -> Self {
+        Self {
+            discord_client_id,
+            discord_client_secret,
+            discord_redirect_uri,
+            discord_client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(std::time::Duration::from_secs(5))
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .expect("Discord HTTP client configuration is valid"),
+            trusted_proxy_ip,
+            keys: Arc::new(Keys::new(jwt_secret.as_bytes())),
+            oauth_start_guard: Arc::new(Mutex::new(discord::OAuthStartGuard::new(
+                std::time::Instant::now(),
+            ))),
+        }
+    }
+
+    pub fn encode_token(&self, claims: Claims) -> Result<String, ServerError> {
+        self.keys.encode_token(claims)
+    }
+}
 
 struct Keys {
     decoding: DecodingKey,
@@ -115,13 +156,19 @@ where
         };
 
         // Decode the user data
-        let token_data =
-            jsonwebtoken::decode::<Claims>(token, &KEYS.decoding, &Validation::default()).map_err(
-                |e| {
-                    log::error!("{e}");
-                    AuthError::InvalidToken
-                },
-            )?;
+        let auth_state = req
+            .extensions
+            .get::<AuthState>()
+            .ok_or(ServerError::InternalError)?;
+        let token_data = jsonwebtoken::decode::<Claims>(
+            token,
+            &auth_state.keys.decoding,
+            &Validation::default(),
+        )
+        .map_err(|e| {
+            log::error!("{e}");
+            AuthError::InvalidToken
+        })?;
 
         Ok(token_data.claims)
     }

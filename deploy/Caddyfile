@@ -1,3 +1,5 @@
 {$API_DOMAIN} {
-    reverse_proxy server:8081
+    reverse_proxy server:8081 {
+        header_up X-Forwarded-For {http.request.remote.host}
+    }
 }
