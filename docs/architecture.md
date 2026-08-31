@@ -41,5 +41,5 @@ The queue, job status map, counters, and broadcast channel are process-local. Re
 - Production Ramiel is amd64 because the image installs the amd64 WASI SDK package.
 - The API health endpoint checks that the process responds; it does not prove a job can compile or execute.
 - Caddy proxies the API domain only. The frontend remains a separate Vercel deployment.
-- Adding a CDN or load balancer requires redesigned, explicitly configured trusted-proxy handling. Do not accept arbitrary forwarded-address chains.
+- Adding a CDN or load balancer requires a redesigned, explicitly configured trusted-proxy setup. Do not accept arbitrary forwarded-address chains.
 - Discord requires `DISCORD_REDIRECT_URI` to use the normalized scheme, host, and effective port of `FRONTEND_ORIGIN`, with the `/auth/discord` path and no credentials, query, or fragment. Register that URI in the Discord application. Use HTTPS in production; HTTP is allowed only for insecure localhost development.

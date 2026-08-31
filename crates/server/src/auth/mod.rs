@@ -43,6 +43,7 @@ pub struct AuthState {
     pub discord_client_id: String,
     pub discord_client_secret: String,
     pub discord_redirect_uri: String,
+    pub discord_client: reqwest::Client,
     pub trusted_proxy_ip: Option<IpAddr>,
     keys: Arc<Keys>,
     pub oauth_start_guard: Arc<Mutex<discord::OAuthStartGuard>>,
@@ -60,6 +61,11 @@ impl AuthState {
             discord_client_id,
             discord_client_secret,
             discord_redirect_uri,
+            discord_client: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(5))
+                .timeout(std::time::Duration::from_secs(15))
+                .build()
+                .expect("Discord HTTP client configuration is valid"),
             trusted_proxy_ip,
             keys: Arc::new(Keys::new(jwt_secret.as_bytes())),
             oauth_start_guard: Arc::new(Mutex::new(discord::OAuthStartGuard::new(

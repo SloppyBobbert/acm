@@ -368,7 +368,7 @@ async fn get_user(discord_id: &str, pool: &SqlitePool) -> Option<User> {
             name,
             username,
             discord_id,
-            auth as "auth: Auth"
+            auth
         FROM
             users
         WHERE discord_id = ?
@@ -428,7 +428,6 @@ async fn login_after_state(
     code: String,
     cookie_secure: bool,
 ) -> Result<CookieJar, ServerError> {
-    let client = reqwest::Client::new();
     let mut params = HashMap::new();
     params.insert("client_secret", auth_state.discord_client_secret.clone());
     params.insert("client_id", auth_state.discord_client_id.clone());
@@ -438,7 +437,8 @@ async fn login_after_state(
     let TokenResponse {
         access_token,
         token_type,
-    } = client
+    } = auth_state
+        .discord_client
         .post("https://discord.com/api/oauth2/token")
         .form(&params)
         .send()
@@ -447,7 +447,8 @@ async fn login_after_state(
         .json()
         .await
         .map_err(|_| ServerError::InternalError)?;
-    let discord_user: DiscordUser = client
+    let discord_user: DiscordUser = auth_state
+        .discord_client
         .get("https://discord.com/api/users/@me")
         .header("Authorization", format!("{token_type} {access_token}"))
         .send()
@@ -745,6 +746,30 @@ mod tests {
             .iter()
             .next()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn user_query_decodes_auth_without_a_sqlx_type_alias() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE users (id INTEGER, name TEXT, username TEXT, discord_id TEXT, auth TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO users (id, name, username, discord_id, auth) VALUES (1, 'Name', 'name', 'discord', 'MEMBER')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let user = get_user("discord", &pool).await.unwrap();
+        assert_eq!(user.auth, crate::auth::Auth::Member);
     }
 
     #[test]
