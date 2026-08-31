@@ -62,6 +62,7 @@ impl AuthState {
             discord_client_secret,
             discord_redirect_uri,
             discord_client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
                 .connect_timeout(std::time::Duration::from_secs(5))
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
