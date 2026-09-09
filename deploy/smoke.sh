@@ -23,7 +23,8 @@ TEST_MODE=0
 INTERNAL_DEADLINE=0
 
 usage() {
-  printf 'Usage: %s [--repository-dir ABSOLUTE_PATH] [--resolve] [--dry-run]\n' "${0##*/}"
+  printf 'Usage: %s [--repository-dir ABSOLUTE_PATH] [--resolve] [--dry-run] [--test-mode]\n' "${0##*/}"
+  printf '%s\n' '  --test-mode is test-only and requires SMOKE_TEST_MODE=1.'
 }
 
 while (($#)); do
@@ -220,7 +221,12 @@ if ((DRY_RUN)); then
   printf '+ '
   printf '%q ' "$TIMEOUT_BIN" --foreground "${COMMAND_TIMEOUT}s" "$DOCKER_BIN" compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" ps
   printf '\n+ '
-  printf '%q ' "$CURL_BIN" --fail --silent --show-error --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME" "https://${API_DOMAIN}/healthz"
+  curl_args=("$CURL_BIN" --fail --silent --show-error --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME")
+  if ((LOCAL_RESOLVE)); then
+    curl_args+=(--resolve "${API_DOMAIN}:443:127.0.0.1")
+  fi
+  curl_args+=("https://${API_DOMAIN}/healthz")
+  printf '%q ' "${curl_args[@]}"
   printf '\n'
   exit 0
 fi

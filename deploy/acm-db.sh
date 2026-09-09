@@ -267,6 +267,7 @@ data_dir_from_env_file() {
   printf '%s\n' "$value"
 }
 
+case "${1:-}" in -h|--help|help) usage; exit 0;; esac
 validate_repository
 if [ "$TEST_MODE" = 1 ] && [ -n "${ACM_DATA_DIR+x}" ] && [ -n "$ACM_DATA_DIR" ]; then
   readonly DATA_DIR_INPUT="$ACM_DATA_DIR"

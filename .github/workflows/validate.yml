@@ -56,12 +56,24 @@ jobs:
         run: |
           shopt -s globstar nullglob
           files=(deploy/**/*.sh scripts/**/*.sh)
-          if ((${#files[@]})); then
-            bash -n "${files[@]}"
-          fi
+          for file in "${files[@]}"; do
+            bash -n "$file"
+          done
       - name: Run deployment semantic tests
         shell: bash
         run: |
+          [ -d "$HOME" ] && [ ! -L "$HOME" ] || exit 1
+          home_mode=$(stat -c '%a' "$HOME")
+          (( (8#$home_mode & 0022) == 0 )) || exit 1
+          TMPDIR="$HOME/acm-deploy-test-tmp"
+          umask 077
+          if [ ! -e "$TMPDIR" ] && [ ! -L "$TMPDIR" ]; then
+            mkdir -m 0700 "$TMPDIR"
+          fi
+          [ -d "$TMPDIR" ] && [ ! -L "$TMPDIR" ] || exit 1
+          tmp_mode=$(stat -c '%a' "$TMPDIR")
+          [ "$tmp_mode" = 700 ] || exit 1
+          export TMPDIR
           for test_script in deploy/tests/*.sh; do
             "$test_script"
           done
