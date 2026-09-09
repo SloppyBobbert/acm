@@ -51,7 +51,7 @@ Check the local services at their default addresses:
 ```sh
 curl --fail http://127.0.0.1:8082/healthz
 curl --fail http://127.0.0.1:8081/healthz
-SQLX_OFFLINE=true cargo test --workspace
+SQLX_OFFLINE=true cargo test --workspace --locked
 (cd lilith && corepack yarn lint && corepack yarn build)
 ```
 
@@ -59,7 +59,7 @@ Ordinary Rust checks use checked-in SQLx metadata with `SQLX_OFFLINE=true`. At r
 
 ## Containers and production
 
-Build production images on the deployment host with `compose.production.yml`; that Compose file is the canonical deployment source. CI publishes server and Ramiel images to GHCR on pushes to `main`, but those images are CI artifacts rather than the documented deployment workflow.
+Build production images on the deployment host with `compose.production.yml`; that Compose file is the canonical deployment source. `/opt/acm` and `/srv/acm` are recommended checkout locations, not the only locations. Another normalized absolute checkout path is allowed only when every path component is in the production trust lane: root-owned, non-symlinked, and not group- or world-writable. Use the operator toolkit in [deploy/README.md](deploy/README.md): run `sudo deploy/bootstrap-ubuntu.sh --check` before host changes. After bootstrap, use the root-run stable helpers, `sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)"` and `sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)"`, for lifecycle and manual database work. Bootstrap installs no backup scheduler; scheduled backups are deferred. CI validates changes but does not replace a host deployment.
 
 Ramiel uses an amd64 WASI SDK package. On Apple Silicon, set `ACM_DOCKER_PLATFORM=linux/amd64`; for direct local Docker builds, also use `--platform linux/amd64 --provenance=false`.
 

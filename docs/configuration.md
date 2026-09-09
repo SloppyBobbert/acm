@@ -1,6 +1,6 @@
 # Configuration
 
-Copy the example files before local or production use. Do not put real secrets in the repository. The server reads Clap options from matching environment variables; command-line options take precedence.
+Copy the example files for local development only. Do not put real secrets in the repository. The production Compose section below is authoritative for production configuration. The server reads Clap options from matching environment variables; command-line options take precedence.
 
 ## Server and local development
 
@@ -40,7 +40,16 @@ Vercel provides `NEXT_PUBLIC_*` values at frontend build time. The frontend navi
 
 ## Production Compose
 
-Copy `deploy/.env.production.example` to `deploy/.env.production` on the deployment host. Values below marked **supply** must be set by the operator.
+At a production checkout (prefer `/opt/acm` or `/srv/acm`), create `deploy/.env.production` as `root:root` mode `0600` and edit it with `sudoedit`; use `deploy/.env.production.example` only as a field reference. Another normalized absolute checkout path is allowed only in the production trust lane: root-owned, non-symlinked, and not group- or world-writable through every existing ancestor and deployment input. Values below marked **supply** must be set by the operator.
+
+```sh
+sudo install -o root -g root -m 600 /dev/null deploy/.env.production
+sudoedit deploy/.env.production
+```
+
+```dotenv
+ACM_DATA_DIR=/var/lib/acm
+```
 
 | Variable | Required | Default | Shape and source |
 | --- | --- | --- | --- |
@@ -50,14 +59,18 @@ Copy `deploy/.env.production.example` to `deploy/.env.production` on the deploym
 | `DISCORD_CLIENT_ID` | **Supply** | none | Server-only Discord OAuth client ID. |
 | `DISCORD_REDIRECT_URI` | **Supply** | none | Uses `FRONTEND_ORIGIN`'s normalized scheme, host, and effective port, with the exact `/auth/discord` path and no credentials, query, or fragment. Register it in Discord. |
 | `DISCORD_SECRET` | **Supply** | none | Discord OAuth client secret. |
-| `ACM_DATA_DIR` | No | `./.local/production-data` | Host directory mounted at `/var/lib/acm` for SQLite. |
+| `ACM_DATA_DIR` | **Supply** | none | Required production host directory mounted at `/var/lib/acm` for SQLite. Use a normalized absolute literal path, for example `/var/lib/acm`; its final directory is `10001:10001` mode `0750`, with root-owned non-writable ancestors. |
 | `PARALLEL_JOB_COUNT` | No | `1` | Passed to the server. |
 | `ACM_DOCKER_PLATFORM` | No | `linux/amd64` | Server image build/run platform. Ramiel is fixed to `linux/amd64`. |
 
 Production Compose forwards `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET`. It fixes only `PORT`, `DATABASE_URL`, `RAMIEL_URL`, `COOKIE_SECURE`, and `TRUSTED_PROXY_IP` internally; it also sets Ramiel's cache configuration. Do not add those fixed values to the production env file unless the image or Compose file is changed.
 
-Set the Discord server variables on the deployment host. `DISCORD_REDIRECT_URI` must use `FRONTEND_ORIGIN`'s normalized scheme, host, and effective port, with the exact `/auth/discord` path and no credentials, query, or fragment; production must use HTTPS. Use HTTP only for insecure localhost development. Restrict `deploy/.env.production` with `chmod 600`; Docker access can read container environment secrets.
+For a production root domain, set `API_DOMAIN` to `api.<ROOT_DOMAIN>`, `FRONTEND_ORIGIN` to `https://app.<ROOT_DOMAIN>`, and `DISCORD_REDIRECT_URI` to `https://app.<ROOT_DOMAIN>/auth/discord`. Set the Discord server variables only on the deployment host. The redirect URI must use `FRONTEND_ORIGIN`'s normalized scheme, host, and effective port, with the exact `/auth/discord` path and no credentials, query, or fragment; production must use HTTPS. Use HTTP only for insecure localhost development. Keep `deploy/.env.production` `root:root` mode `0600`; Docker access can read container environment secrets.
 
 Deploy the frontend and API under one registrable custom domain, such as `app.example.com` and `api.example.com`. Their session cookie uses `SameSite=Lax`; raw unrelated Vercel domains may be blocked by third-party-cookie policies.
 
 Production Caddy has fixed address `172.30.0.2` on the private `172.30.0.0/24` edge network. It replaces `X-Forwarded-For` with its directly observed client address, and the server trusts only that address. If a CDN or load balancer is introduced, redesign and configure trusted-proxy handling; do not accept arbitrary forwarded-address chains.
+
+## Bootstrap configuration
+
+`deploy/bootstrap-ubuntu.sh` writes `/etc/acm/bootstrap.conf`, owned by `root:root` with mode `0600`. It records the normalized repository, backup, and quarantine paths for the stable helpers. Bootstrap-managed data is `10001:10001` mode `0750` with root-owned non-writable ancestors; backup and quarantine roots are `root:root` mode `0700`; deployment state is `root:root` mode `0700` with mode-`0600` state files. Bootstrap-managed directories contain an `.acm-managed` marker; a nonempty unmarked directory requires reviewed, explicit `--adopt-existing-paths` adoption. Defaults are `/var/lib/acm`, `/var/backups/acm`, and `/var/lib/acm-quarantine`. The sole operation lock is `/run/acm/acm-operation.lock`; bootstrap may create or reuse its private directory and lock file but does not modify global `/run/lock`. Bootstrap installs stable manual helpers only; it does not install a backup scheduler, and scheduled backups are deferred.

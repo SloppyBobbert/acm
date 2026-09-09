@@ -55,7 +55,7 @@ services:
       TRUSTED_PROXY_IP: 172.30.0.2
       PARALLEL_JOB_COUNT: ${PARALLEL_JOB_COUNT:-1}
     volumes:
-      - ${ACM_DATA_DIR:-./.local/production-data}:/var/lib/acm
+      - ${ACM_DATA_DIR:?ACM_DATA_DIR must be set to a normalized absolute path}:/var/lib/acm
     depends_on:
       ramiel:
         condition: service_healthy

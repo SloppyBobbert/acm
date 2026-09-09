@@ -1,17 +1,13 @@
 # Operations
 
-Production commands require a completed `deploy/.env.production` copied from `deploy/.env.production.example` on the deployment host.
+Production commands require a completed `deploy/.env.production`, created as `root:root` mode `0600` with `sudoedit`, on a checkout that satisfies the production trust lane. `/opt/acm` and `/srv/acm` are recommended, not exclusive; another normalized absolute path is permitted only with root-owned, non-symlinked, non-group/world-writable ancestors and deployment inputs. Data's final directory is `10001:10001` mode `0750` with root-owned ancestors. Backup, quarantine, and state roots are `root:root` mode `0700`; state files are mode `0600`. The launch, lifecycle, and backup contracts are in [deployment](../deploy/README.md); use the scripts rather than manual database-copy procedures. Run every production command with `sudo`.
 
 ## Health and logs
 
 ```sh
-set -euo pipefail
-set -a
-. deploy/.env.production
-set +a
-docker compose --env-file deploy/.env.production -f compose.production.yml ps
-curl --fail --connect-timeout 5 --max-time 10 --resolve "${API_DOMAIN}:443:127.0.0.1" "https://${API_DOMAIN}/healthz"
-docker compose --env-file deploy/.env.production -f compose.production.yml logs -f caddy server ramiel
+sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" status
+sudo /usr/local/libexec/acm/smoke.sh --repository-dir "$(pwd -P)" --resolve
+sudo docker compose --env-file deploy/.env.production -f compose.production.yml logs -f caddy server ramiel
 ```
 
 The server and Ramiel each expose `/healthz` inside the stack. Caddy's health check reaches the API health endpoint through the configured HTTPS API domain. A successful API check means the server responded; it does not exercise the runner.
@@ -27,79 +23,18 @@ The OAuth-start endpoint allows a global burst of 50 requests and refills five r
 After deploying and starting the stack so migrations complete, the intended first operator must sign in with Discord before being promoted from `MEMBER`. In Discord, open **User Settings > Advanced** and enable **Developer Mode**. Then right-click the intended account/user and choose **Copy User ID**. Verify the copied ID belongs to that signed-in account before running:
 
 ```sh
-docker compose --env-file deploy/.env.production -f compose.production.yml run --rm --no-deps server bootstrap-admin --database-url 'sqlite:///var/lib/acm/db.sqlite?mode=rw' --discord-id '<discord-id>'
+sudo docker compose --env-file deploy/.env.production -f compose.production.yml run --rm --no-deps server bootstrap-admin --database-url 'sqlite:///var/lib/acm/db.sqlite?mode=rw' --discord-id '<discord-id>'
 ```
 
 The existing-file `mode=rw` URL does not create a database. The command creates no user, refuses missing or duplicate matches, and refuses once any administrator exists. Sign out and back in after promotion so the JWT reflects `ADMIN`.
 
 ## Backup and restore
 
-Stop the server before copying SQLite. For every backup, create a new empty, uniquely named directory outside `ACM_DATA_DIR`; copy `db.sqlite` and only WAL/SHM sidecars from that stopped-server session into it.
+Run manual database commands from a checkout with `/usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)"`; bootstrap installs no backup scheduler, and scheduled backups are deferred. See [deployment](../deploy/README.md#backup-restore-and-rollback) for marker, checksum, quarantine, and recovery behavior. The stable helpers remain available after checkout, allowing rollback to continue when the target lacks toolkit files. Test a restore on a non-production copy before an incident.
 
-```sh
-set -euo pipefail
-set -a
-. deploy/.env.production
-set +a
-docker compose --env-file deploy/.env.production -f compose.production.yml stop server
-backup_dir=""
-backup_complete=0
-backup_cleanup() {
-  exit_status=$?
-  trap - EXIT
-  if [ "$exit_status" -ne 0 ]; then
-    if [ -n "$backup_dir" ] && [ "$backup_complete" -eq 0 ]; then
-      sudo touch "$backup_dir/INCOMPLETE" || true
-    fi
-    docker compose --env-file deploy/.env.production -f compose.production.yml start server || true
-  fi
-  exit "$exit_status"
-}
-trap backup_cleanup EXIT
-backup_root=/var/backups/acm # operator-chosen path, outside ACM_DATA_DIR
-quarantine_root=/var/lib/acm-quarantine # choose the ACM_DATA_DIR filesystem if practical
-sudo install -d -m 700 -o root -g root "$backup_root" "$quarantine_root"
-backup_dir="$(sudo mktemp -d "$backup_root/acm-XXXXXXXX")"
-sudo cp "$ACM_DATA_DIR/db.sqlite" "$backup_dir/"
-for sidecar in db.sqlite-wal db.sqlite-shm; do
-  sudo test ! -e "$ACM_DATA_DIR/$sidecar" || sudo cp "$ACM_DATA_DIR/$sidecar" "$backup_dir/"
-done
-backup_complete=1
-docker compose --env-file deploy/.env.production -f compose.production.yml start server
-trap - EXIT
-```
+> **Warning:** A manual backup stops only a server it stopped itself and holds the shared operation lock. Copy, checksum, and Docker commands can hang indefinitely, and no automated backup or timeout supervisor is available. Supervise the operation, preserve its output and other evidence, and inspect running processes and the relevant container before recovery. Do not rely on cleanup traps to guarantee restart or kill processes or remove the lock as a shortcut.
 
-After a successful copy, restart the server as shown. If a later command fails, the EXIT handler marks an unfinished created directory with `INCOMPLETE` and attempts to restart the server while preserving the failure status. Backups containing `INCOMPLETE` are unusable.
-
-To restore, set `backup_dir` to the selected immutable backup directory in the current shell; it does not persist from the backup session. Stop the server, create a new empty quarantine directory, and move the existing database set before copying that one matching backup set:
-
-```sh
-set -euo pipefail
-set -a
-. deploy/.env.production
-set +a
-backup_root=/var/backups/acm # operator-chosen path, outside ACM_DATA_DIR
-quarantine_root=/var/lib/acm-quarantine # choose the ACM_DATA_DIR filesystem if practical
-sudo install -d -m 700 -o root -g root "$backup_root" "$quarantine_root"
-backup_dir="$backup_root/acm-REPLACE_ME"
-sudo test ! -e "$backup_dir/INCOMPLETE"
-sudo test -f "$backup_dir/db.sqlite"
-docker compose --env-file deploy/.env.production -f compose.production.yml stop server
-quarantine_dir="$(sudo mktemp -d "$quarantine_root/acm-XXXXXXXX")"
-for name in db.sqlite db.sqlite-wal db.sqlite-shm; do
-  sudo test ! -e "$ACM_DATA_DIR/$name" || sudo mv "$ACM_DATA_DIR/$name" "$quarantine_dir/"
-done
-sudo cp "$backup_dir/db.sqlite" "$ACM_DATA_DIR/"
-for sidecar in db.sqlite-wal db.sqlite-shm; do
-  sudo test ! -e "$backup_dir/$sidecar" || sudo cp "$backup_dir/$sidecar" "$ACM_DATA_DIR/"
-done
-for name in db.sqlite db.sqlite-wal db.sqlite-shm; do
-  sudo test ! -e "$ACM_DATA_DIR/$name" || sudo chown 10001:10001 "$ACM_DATA_DIR/$name"
-done
-docker compose --env-file deploy/.env.production -f compose.production.yml start server
-```
-
-If a restore copy fails, leave the server stopped. First quarantine any partial restored files in a new directory under `$quarantine_root`; then move the original set from `$quarantine_dir` back into `ACM_DATA_DIR` and start the server. Do not overwrite partial files with the original set. Test the procedure on a non-production copy before using it during an incident.
+If deployment leaves failed or prepared state, inspect it before explicitly using the stable helper's [`acknowledge-state`](../deploy/README.md#deployment-state-recovery) recovery command. The command archives evidence and does not perform an automatic rollback, restore, or restart.
 
 ## Capacity and temporary storage
 
