@@ -8,7 +8,7 @@ The source checkout is the canonical deployment input: `compose.production.yml` 
 
 Use an Ubuntu amd64/x86-64 host, a clean checkout (prefer `/opt/acm` or `/srv/acm`), DNS for your frontend and API hosts, and public TCP ports 80 and 443. An alternate checkout path is allowed only when it satisfies the production trust lane above. Prepare or clone the production checkout with `sudo`. Do not put live domain, account, or secret values in the checkout.
 
-Run from the checkout. `--check` changes nothing. An ordinary bootstrap installs Docker, managed directories, stable deploy/database/smoke helpers under `/usr/local/libexec/acm`, and systemd units. It does **not** change UFW unless `--configure-firewall` is supplied, and it never enables backups. Managed nonempty directories need explicit reviewed adoption with `--adopt-existing-paths`. Bootstrap writes root-owned `0600` `/etc/acm/bootstrap.conf`; its default data, backup, and quarantine roots are `/var/lib/acm`, `/var/backups/acm`, and `/var/lib/acm-quarantine`.
+Run from the checkout. `--check` changes nothing. An ordinary bootstrap installs Docker, managed directories, and stable deploy/database/smoke helpers under `/usr/local/libexec/acm`. It does **not** change UFW unless `--configure-firewall` is supplied. It installs no backup scheduler: backups are manual-only and scheduled backups are deferred. Managed nonempty directories need explicit reviewed adoption with `--adopt-existing-paths`. Bootstrap writes root-owned `0600` `/etc/acm/bootstrap.conf`; its default data, backup, and quarantine roots are `/var/lib/acm`, `/var/backups/acm`, and `/var/lib/acm-quarantine`.
 
 ```bash
 sudo deploy/bootstrap-ubuntu.sh --check
@@ -26,7 +26,7 @@ sudoedit deploy/.env.production
 sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" validate
 ```
 
-Only a host with no production SQLite files and no deployment state may use `initial`. After it succeeds, take and verify the first backup before enabling the timer. `acm-db` writes exactly one `BACKUP_DIR=...` line to stdout; retain that path.
+Only a host with no production SQLite files and no deployment state may use `initial`. After it succeeds, take and verify the first manual backup. `acm-db` writes exactly one `BACKUP_DIR=...` line to stdout; retain that path.
 
 ```bash
 sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" initial '<revision>'
@@ -36,10 +36,11 @@ case "$backup_output" in
   *) printf '%s\n' "unexpected backup output: $backup_output" >&2; exit 1 ;;
 esac
 sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" verify --backup-dir "$backup_dir"
-sudo deploy/bootstrap-ubuntu.sh --enable-backups --verified-backup "$backup_dir"
 ```
 
-The persistent daily `acm-db-backup@daily.timer` runs the installed stable helper under the sole host operation lock, `/run/acm/acm-operation.lock`. Its directory is `root:root` mode `0700` and its file is `root:root` mode `0600`. Bootstrap or the first mutating root helper creates or reuses those objects after reboot; neither changes the global `/run/lock` directory. The timer is enabled only by the final command above.
+There is no automated backup or timeout supervisor. Run and supervise each backup manually; scheduled backups are deferred.
+
+Manual backups and deployment mutations share `/run/acm/acm-operation.lock`. Its directory is `root:root` mode `0700` and its file is `root:root` mode `0600`. Bootstrap or the first mutating root helper creates or reuses these objects after reboot; neither changes the global `/run/lock` directory.
 
 ## Updates
 
@@ -59,7 +60,9 @@ sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" deploy '<
 
 ## Backup, restore, and rollback
 
-All production helper invocations use the stable `/usr/local/libexec/acm` copies and include `--repository-dir "$(pwd -P)"`. Repository-local scripts are only appropriate for the initial bootstrap or check before those helpers exist. A backup stops only a running server it stopped itself, copies a consistent SQLite set, records source revision and migration identity in metadata, verifies checksums, prints `BACKUP_DIR=...` on stdout, then restarts that server. `INCOMPLETE` remains during copying and becomes `COMPLETE` only after verification. Backups share the host operation lock with deployment, have no retention policy, and are never deleted by the helper.
+All production helper invocations use the stable `/usr/local/libexec/acm` copies and include `--repository-dir "$(pwd -P)"`. Repository-local scripts are only appropriate for the initial bootstrap or check before those helpers exist. A manual backup stops a running server, holds the shared host operation lock with deployment, copies a consistent SQLite set, records source revision and migration identity in metadata, and verifies checksums. After verifying and sealing the backup, the helper restarts the server only if this invocation stopped it, releases the operation lock, and prints `BACKUP_DIR=...` to stdout; a restart failure returns nonzero without printing that success line. `INCOMPLETE` remains during copying and becomes `COMPLETE` only after verification. Backups have no retention policy and are never deleted by the helper.
+
+> **Warning:** Copy, checksum, and Docker commands can hang indefinitely. No automated backup or timeout supervisor is available. An operator must supervise the backup, preserve its output and other evidence, and inspect running processes and the relevant container before deciding on recovery. Do not assume cleanup traps guarantee a restart, and do not kill processes or remove the shared lock as a shortcut.
 
 ```bash
 sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" backup --backup-root /var/backups/acm

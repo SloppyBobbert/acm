@@ -29,15 +29,14 @@ if [ "$TEST_MODE" = 1 ]; then
   LOCK_PATH="$LOCK_RUN_DIR/acm/acm-operation.lock"
 fi
 
-check_only=0; configure_firewall_requested=0; adopt_existing_paths=0; enable_backups=0; verified_backup=''
+check_only=0; configure_firewall_requested=0; adopt_existing_paths=0
 
 usage() {
   printf '%s\n' \
     "Usage: ${0##*/} [--check|--dry-run] [--adopt-existing-paths] [--configure-firewall]" \
-    "       ${0##*/} --enable-backups --verified-backup PATH" \
     '' \
     'All host paths are validated before bootstrap changes. Firewall configuration is' \
-    'opt-in. Bootstrap installs, but never enables, the backup timer. Existing' \
+    'opt-in. Scheduled backups are unsupported; use acm-db.sh backup manually. Existing' \
     'nonempty managed directories need --adopt-existing-paths after review.'
 }
 canonicalize_path() {
@@ -127,8 +126,7 @@ while [ "$#" -gt 0 ]; do
     --check|--dry-run) check_only=1 ;;
     --adopt-existing-paths) adopt_existing_paths=1 ;;
     --configure-firewall) configure_firewall_requested=1 ;;
-    --enable-backups) enable_backups=1 ;;
-    --verified-backup) shift; [ "$#" -gt 0 ] || fail "--verified-backup requires PATH"; verified_backup=$1 ;;
+    --enable-backups|--verified-backup) fail 'scheduled backups are unsupported; run acm-db.sh backup manually' ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
   esac
@@ -272,7 +270,6 @@ validate_repository() {
   [ -x "$repository_dir/deploy/acm-deploy.sh" ] && [ ! -L "$repository_dir/deploy/acm-deploy.sh" ] || fail "acm-deploy.sh is missing or unsafe"
   [ -x "$repository_dir/deploy/smoke.sh" ] && [ ! -L "$repository_dir/deploy/smoke.sh" ] || fail "smoke.sh is missing or unsafe"
   [ -f "$repository_dir/compose.production.yml" ] && [ ! -L "$repository_dir/compose.production.yml" ] || fail "production Compose file is missing or unsafe"
-  [ -f "$SCRIPT_DIR/systemd/acm-db-backup@.service" ] && [ -f "$SCRIPT_DIR/systemd/acm-db-backup@.timer" ] || fail "backup unit template is missing"
 }
 
 validate_host() {
@@ -306,9 +303,6 @@ install_units() {
   run_root install -m 0755 "$repository_dir/deploy/acm-deploy.sh" /usr/local/libexec/acm/acm-deploy.sh
   run_root install -m 0755 "$repository_dir/deploy/acm-db.sh" /usr/local/libexec/acm/acm-db.sh
   run_root install -m 0755 "$repository_dir/deploy/smoke.sh" /usr/local/libexec/acm/smoke.sh
-  run_root install -m 0644 "$SCRIPT_DIR/systemd/acm-db-backup@.service" /etc/systemd/system/acm-db-backup@.service
-  run_root install -m 0644 "$SCRIPT_DIR/systemd/acm-db-backup@.timer" /etc/systemd/system/acm-db-backup@.timer
-  run_root systemctl daemon-reload
 }
 prepare_lock() {
   local lock_dir
@@ -330,25 +324,6 @@ prepare_lock() {
 }
 configure_firewall() { run_root ufw allow 22/tcp; run_root ufw allow 80/tcp; run_root ufw allow 443/tcp; run_root ufw default deny incoming; run_root ufw default allow outgoing; run_root ufw --force enable; }
 
-if [ "$enable_backups" -eq 1 ]; then
-  [ "$check_only" -eq 0 ] && [ "$configure_firewall_requested" -eq 0 ] && [ "$adopt_existing_paths" -eq 0 ] && [ -n "$verified_backup" ] || fail "--enable-backups requires only --verified-backup PATH"
-  unset ACM_REPOSITORY_DIR ACM_DATA_DIR ACM_BACKUP_DIR ACM_QUARANTINE_DIR
-  load_bootstrap_conf
-  validate_repository
-  data_dir=$(parse_production_data_dir "${TEST_ENV_FILE:-$repository_dir/deploy/.env.production}")
-  assert_managed_paths
-  [ -d "$data_dir" ] && [ ! -L "$data_dir" ] && [ -f "$data_dir/db.sqlite" ] && [ ! -L "$data_dir/db.sqlite" ] || fail "production SQLite database is missing or unsafe"
-  verified_backup=$(validate_path verified_backup "$verified_backup")
-  same_or_below "$verified_backup" "$backup_dir" || fail "verified backup must be inside ACM_BACKUP_DIR"
-  [ -d "$verified_backup" ] && [ ! -L "$verified_backup" ] || fail "verified backup must be an existing non-symlink directory"
-  grep -Fq -- '--repository-dir' "$repository_dir/deploy/acm-db.sh" || fail "backup helper lacks --repository-dir support"
-  grep -Fq -- 'acm-db.sh --repository-dir ${ACM_REPOSITORY_DIR} backup --backup-root ${ACM_BACKUP_DIR}' "$SCRIPT_DIR/systemd/acm-db-backup@.service" || fail "backup service contract is invalid"
-  run_root systemctl is-active --quiet acm-db-backup@daily.timer && fail "backup timer is already active"
-  "$repository_dir/deploy/acm-db.sh" --repository-dir "$repository_dir" verify --backup-dir "$verified_backup"
-  validate_host; set_root_runner; install_units; run_root systemctl enable --now acm-db-backup@daily.timer
-  printf 'backups enabled\n'; exit 0
-fi
-
 repository_dir=$(validate_path ACM_REPOSITORY_DIR "${ACM_REPOSITORY_DIR:-$DEFAULT_REPOSITORY_DIR}")
 data_dir=$(validate_path ACM_DATA_DIR "${ACM_DATA_DIR:-/var/lib/acm}")
 backup_dir=$(validate_path ACM_BACKUP_DIR "${ACM_BACKUP_DIR:-/var/backups/acm}")
@@ -365,4 +340,4 @@ run_root install -d -m 0755 /etc/acm
 write_bootstrap_conf
 [ "$configure_firewall_requested" -eq 1 ] && configure_firewall
 install_units
-printf 'bootstrap complete; backups remain disabled (run --enable-backups --verified-backup PATH after deployment)\n'
+printf 'bootstrap complete; scheduled backups are disabled; run acm-db.sh backup manually\n'

@@ -1,5 +1,6 @@
 [Unit]
-Description=Daily ACM database backup timer (%i)
+Description=Disabled ACM database backup timer (%i)
+ConditionPathExists=!/
 
 [Timer]
 OnCalendar=daily

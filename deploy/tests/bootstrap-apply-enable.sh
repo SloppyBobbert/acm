@@ -91,7 +91,13 @@ pass 'gated invalid test root reports intended error'
 if env ACM_BOOTSTRAP_TEST_ROOT="$FIXTURE" "$ROOT/deploy/bootstrap-ubuntu.sh" --help >/dev/null 2>&1; then fail 'production accepted test override'; fi
 pass 'production rejects test overrides without gate'
 
-expect_output 'bootstrap complete; backups remain disabled (run --enable-backups --verified-backup PATH after deployment)' "${common[@]}"
+set +e
+: > "$LOG"; unsupported_output=$("${common[@]}" --enable-backups 2>&1); unsupported_status=$?
+set -e
+[ "$unsupported_status" -ne 0 ] && [[ "$unsupported_output" == *'scheduled backups are unsupported'* ]] && [ ! -s "$LOG" ] || fail 'unsupported scheduler enable mutated the host fixture'
+pass 'scheduled backup enable is rejected before mutation'
+
+expect_output 'bootstrap complete; scheduled backups are disabled; run acm-db.sh backup manually' "${common[@]}"
 pass 'ordinary apply emits exact completion output'
 config=$FIXTURE/etc/acm/bootstrap.conf
 [ -f "$config" ] && [ ! -L "$config" ] && [ "$(stat -c '%a' "$config" 2>/dev/null || stat -f '%Lp' "$config")" = 600 ] || fail 'bootstrap config is not regular mode 0600'
@@ -106,8 +112,8 @@ pass 'ordinary apply preserves managed role modes'
 [ -f "$FIXTURE/run/acm/acm-operation.lock" ] && [ ! -L "$FIXTURE/run/acm/acm-operation.lock" ] && [ "$(stat -c '%a' "$FIXTURE/run/acm/acm-operation.lock" 2>/dev/null || stat -f '%Lp' "$FIXTURE/run/acm/acm-operation.lock")" = 600 ] || fail 'bootstrap lock is not regular mode 0600'
 pass 'ordinary apply creates the private operation lock directory and lock'
 grep -Fq 'install -m 0755' "$LOG" && grep -Fq 'acm-deploy.sh' "$LOG" && grep -Fq 'acm-db.sh' "$LOG" && grep -Fq 'smoke.sh' "$LOG" || fail 'stable helper installs missing'
-! grep -Fq 'enable --now acm-db-backup@daily.timer' "$LOG" || fail 'ordinary apply enabled timer'
-pass 'ordinary apply installs stable helpers without enabling timer or escaping test root'
+! grep -Fq 'acm-db-backup@' "$LOG" && ! grep -Fq 'systemctl' "$LOG" || fail 'ordinary apply installed or enabled scheduler'
+pass 'ordinary apply installs stable helpers without installing scheduler'
 
 docker=$FIXTURE/docker
 flock=$FIXTURE/flock
@@ -120,15 +126,4 @@ backup=${backup#BACKUP_DIR=}
 [ "$(stat -c '%a' "$backup" 2>/dev/null || stat -f '%Lp' "$backup")" = 500 ] || fail 'verified backup directory is not mode 0500'
 for payload in "$backup"/*; do [ "$(stat -c '%a' "$payload" 2>/dev/null || stat -f '%Lp' "$payload")" = 400 ] || fail "verified backup payload is not mode 0400: $payload"; done
 pass 'real helper seals completed backup modes'
-backup_before=$(cksum "$backup/metadata.txt" "$backup/manifest.sha256")
-chmod 0640 "$config"
-if "${common[@]}" --enable-backups --verified-backup "$backup" >/dev/null 2>&1; then fail 'enable-backups accepted mode 0640 config'; fi
-pass 'enable-backups rejects non-0600 config'
-chmod 0600 "$config"
-expect_output 'backups enabled' "${common[@]}" --enable-backups --verified-backup "$backup"
-pass 'enable-backups accepts same config and emits exact output'
-[ "$backup_before" = "$(cksum "$backup/metadata.txt" "$backup/manifest.sha256")" ] || fail 'enable-backups mutated verified backup'
-! grep -q '^ufw ' "$LOG" || fail 'backup enable invoked firewall'
-grep -Fq 'systemctl is-active --quiet acm-db-backup@daily.timer' "$LOG" && grep -Fq 'systemctl enable --now acm-db-backup@daily.timer' "$LOG" || fail 'backup timer transitions missing'
-pass 'enable-backups verifies backup, leaves it unchanged, and enables timer'
 printf 'ok - retained fixture: %s\n' "$FIXTURE"
