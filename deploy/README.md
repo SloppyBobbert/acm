@@ -1,184 +1,117 @@
 # Production deployment
 
-The production API stack runs on the deployment host as Caddy -> server -> Ramiel. Caddy is the only public container; it exposes ports 80 and 443. The frontend remains on Vercel and calls Caddy's API domain. Build this stack from the checked-out repository with `compose.production.yml`; do not treat GHCR artifacts as the canonical deployment source.
+The source checkout is the canonical deployment input: `compose.production.yml` builds Caddy, server, and Ramiel on the host. Caddy alone exposes 80/443. Do not substitute GHCR images for this workflow.
 
-## Prerequisites
+`/opt/acm` and `/srv/acm` are recommended production checkout locations, not exclusive ones. Any other normalized absolute checkout path is permitted only in the production trust lane: every existing ancestor, the checkout, `.git`, deployment inputs, environment, migrations, and state are root-owned, non-symlinked, and not group- or world-writable. The production environment file is `root:root` mode `0600`; deployment state directories are `root:root` mode `0700` and state files mode `0600`. Run every production command with `sudo`.
 
-- A Linux host with Docker Engine and Docker Compose
-- An A/AAAA record for the API domain pointing to the host
-- Ports 80 and 443 reachable from the internet for Caddy and TLS
-- A checkout of this repository on the deployment host
+## Bootstrap and first launch
 
-## Configure the host
+Use an Ubuntu amd64/x86-64 host, a clean checkout (prefer `/opt/acm` or `/srv/acm`), DNS for your frontend and API hosts, and public TCP ports 80 and 443. An alternate checkout path is allowed only when it satisfies the production trust lane above. Prepare or clone the production checkout with `sudo`. Do not put live domain, account, or secret values in the checkout.
 
-Copy the production example outside version control and supply each required value:
+Run from the checkout. `--check` changes nothing. An ordinary bootstrap installs Docker, managed directories, stable deploy/database/smoke helpers under `/usr/local/libexec/acm`, and systemd units. It does **not** change UFW unless `--configure-firewall` is supplied, and it never enables backups. Managed nonempty directories need explicit reviewed adoption with `--adopt-existing-paths`. Bootstrap writes root-owned `0600` `/etc/acm/bootstrap.conf`; its default data, backup, and quarantine roots are `/var/lib/acm`, `/var/backups/acm`, and `/var/lib/acm-quarantine`.
 
-```sh
-cp deploy/.env.production.example deploy/.env.production
+```bash
+sudo deploy/bootstrap-ubuntu.sh --check
+# Choose one bootstrap invocation. This ordinary one does not change UFW.
+sudo ACM_REPOSITORY_DIR="$(pwd -P)" ACM_DATA_DIR=/var/lib/acm ACM_BACKUP_DIR=/var/backups/acm ACM_QUARANTINE_DIR=/var/lib/acm-quarantine deploy/bootstrap-ubuntu.sh
+# Alternative single bootstrap invocation, only after reviewing host firewall policy:
+sudo ACM_REPOSITORY_DIR="$(pwd -P)" ACM_DATA_DIR=/var/lib/acm ACM_BACKUP_DIR=/var/backups/acm ACM_QUARANTINE_DIR=/var/lib/acm-quarantine deploy/bootstrap-ubuntu.sh --configure-firewall
 ```
 
-Set `API_DOMAIN`, `FRONTEND_ORIGIN`, `JWT_SECRET`, `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET`. Generate a long, unique `JWT_SECRET`. `ACM_DATA_DIR` defaults to `./.local/production-data`; choose a persistent host path if needed. `PARALLEL_JOB_COUNT` defaults to `1` and must be at least `1` (`0` parses but is unsupported).
+Create the root-owned `deploy/.env.production` with `sudoedit`, using the checked-in example only as a field reference. Supply the values in [configuration](../docs/configuration.md), including the required normalized absolute literal path `ACM_DATA_DIR=/var/lib/acm`. Do not copy a production environment file as an unprivileged user. `validate` checks it without printing interpolated secrets.
 
-Set `DISCORD_REDIRECT_URI` with the normalized scheme, host, and effective port of `FRONTEND_ORIGIN`, the `/auth/discord` path, and no credentials, query, or fragment. Register that URI in the Discord application. Production uses HTTPS; HTTP is allowed only for insecure localhost development. Restrict the environment file after creating it:
-
-```sh
-chmod 600 deploy/.env.production
+```bash
+sudo install -o root -g root -m 600 /dev/null deploy/.env.production
+sudoedit deploy/.env.production
+sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" validate
 ```
 
-Anyone with Docker access can read container environment secrets, including this file's values.
+Only a host with no production SQLite files and no deployment state may use `initial`. After it succeeds, take and verify the first backup before enabling the timer. `acm-db` writes exactly one `BACKUP_DIR=...` line to stdout; retain that path.
 
-The server runs as UID/GID `10001`, so root privilege is required to create the selected data directory with the right ownership before the first start:
-
-```sh
-sudo install -d -o 10001 -g 10001 .local/production-data
+```bash
+sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" initial '<revision>'
+backup_output="$(sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" backup --backup-root /var/backups/acm)"
+case "$backup_output" in
+  BACKUP_DIR=/*) backup_dir=${backup_output#BACKUP_DIR=} ;;
+  *) printf '%s\n' "unexpected backup output: $backup_output" >&2; exit 1 ;;
+esac
+sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" verify --backup-dir "$backup_dir"
+sudo deploy/bootstrap-ubuntu.sh --enable-backups --verified-backup "$backup_dir"
 ```
 
-If `ACM_DATA_DIR` names another path, create and chown that path instead. Production Ramiel is amd64. Set `ACM_DOCKER_PLATFORM=linux/amd64` on Apple Silicon hosts.
+The persistent daily `acm-db-backup@daily.timer` runs the installed stable helper under the sole host operation lock, `/run/lock/acm/acm-operation.lock`. Its child directory is `root:root` mode `0700` and its file is `root:root` mode `0600`. Bootstrap or the first mutating root helper creates or reuses those child objects after reboot; neither changes the global `/run/lock` directory. The timer is enabled only by the final command above.
 
-## Deploy
+## Updates
 
-Run these commands from the repository root on the deployment host:
+Every update needs a verified predeployment backup made while the current checkout was at `HEAD`; its recorded revision and migration identity must match that checkout. Capture, verify, then deploy the target.
 
-```sh
-docker compose --env-file deploy/.env.production -f compose.production.yml config --quiet
-docker compose --env-file deploy/.env.production -f compose.production.yml build
-docker compose --env-file deploy/.env.production -f compose.production.yml up -d
-docker compose --env-file deploy/.env.production -f compose.production.yml ps
-docker compose --env-file deploy/.env.production -f compose.production.yml logs -f caddy server ramiel
+```bash
+backup_output="$(sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" backup --backup-root /var/backups/acm)"
+case "$backup_output" in
+  BACKUP_DIR=/*) backup_dir=${backup_output#BACKUP_DIR=} ;;
+  *) printf '%s\n' "unexpected backup output: $backup_output" >&2; exit 1 ;;
+esac
+sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" verify --backup-dir "$backup_dir"
+sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" deploy '<target>' --backup "$backup_dir"
 ```
 
-Caddy obtains and serves TLS for `API_DOMAIN` after DNS and public ports are correct. `config --quiet` validates the resolved configuration without printing interpolated values, including secrets.
+`deploy` requires a clean checkout, an existing local target revision, and that verified matching backup. It detaches at the target, builds, starts, smokes, and records state. The stable helpers remain available after checkout, so rollback can continue even when the target revision does not contain toolkit files.
 
-The OAuth-start endpoint allows a global burst of 50 requests and refills five requests per second. Each client can burst five requests and refills one request every 30 seconds. Excess requests receive HTTP `429`, and the in-memory limits reset when the API process restarts. Caddy replaces `X-Forwarded-For` with the directly observed client address, and the API trusts only Caddy's fixed private Docker address. If you add a CDN or load balancer, redesign and configure trusted-proxy handling for that topology; do not accept arbitrary forwarded-address chains.
+## Backup, restore, and rollback
+
+All production helper invocations use the stable `/usr/local/libexec/acm` copies and include `--repository-dir "$(pwd -P)"`. Repository-local scripts are only appropriate for the initial bootstrap or check before those helpers exist. A backup stops only a running server it stopped itself, copies a consistent SQLite set, records source revision and migration identity in metadata, verifies checksums, prints `BACKUP_DIR=...` on stdout, then restarts that server. `INCOMPLETE` remains during copying and becomes `COMPLETE` only after verification. Backups share the host operation lock with deployment, have no retention policy, and are never deleted by the helper.
+
+```bash
+sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" backup --backup-root /var/backups/acm
+sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" verify --backup-dir '/var/backups/acm/<backup-directory>'
+sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" metadata --backup-dir '/var/backups/acm/<backup-directory>'
+```
+
+Rollback is prepare-only. The target backup must have been created while that target revision and its migrations were current. `rollback` checks this match, detaches and builds the target, but never starts services, restores data, or runs smoke. Generic `up` refuses an incomplete rollback state. Each prepare, restore, and rollback-start operation takes the shared host lock; state overwrite refusal protects the prepared state across those steps.
+
+```bash
+sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" rollback '<target>' --backup "$backup_dir"
+sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" restore --backup-dir "$backup_dir" --yes-restore --quarantine-root /var/lib/acm-quarantine
+# Confirm the reported quarantine path and restore success before continuing.
+sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" rollback-start --backup "$backup_dir"
+```
+
+Restore verifies a complete backup under the shared lock, stops the server only if necessary, moves the current SQLite set into a new same-filesystem quarantine directory, and restores ownership `10001:10001` with mode `0600`. Stale SQLite journals and sidecars are quarantined, never deleted; an unsafe symlink or nonregular sidecar causes restore to fail. If restore fails, the server remains stopped. Inspect the reported quarantine directory; quarantine any partial restored files separately, move the original set back, and only then start the server. Do not overwrite or delete files during recovery.
+
+## Deployment state recovery
+
+Deployment refuses to overwrite a failed or prepared state. Inspect the preserved failed or prepared state and determine the appropriate operator action; recovery is never automatic. Only after that review, acknowledge it explicitly:
+
+```bash
+sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" acknowledge-state
+```
+
+The command archives the state evidence and records the acknowledgment; it never deletes that evidence. It does not roll back, restore data, or start services.
+
+## Smoke and routine operations
+
+```bash
+sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" status
+sudo /usr/local/libexec/acm/smoke.sh --repository-dir "$(pwd -P)" --resolve
+sudo docker compose --env-file deploy/.env.production -f compose.production.yml logs -f caddy server ramiel
+```
+
+`/usr/local/libexec/acm/smoke.sh` is read-only. Its hard wall-clock deadline is 90 seconds total; Docker status and diagnostic commands are bounded to the remaining budget. It waits for Caddy, server, and Ramiel health, then requests the API health endpoint. `--resolve` routes the API host to `127.0.0.1` only when run on the deployment host.
 
 ## First administrator
 
-After the stack starts and the server has completed its migrations, have the intended first operator sign in with Discord. This creates the operator's account as `MEMBER`. In Discord, open **User Settings > Advanced** and enable **Developer Mode**. Then right-click the intended account/user and choose **Copy User ID**. Verify the copied ID belongs to that signed-in account before running the bundled first-admin command from the repository root:
+After the stack starts and migrations complete, have the intended operator sign in with Discord. Then use the operator's verified Discord user ID:
 
-```sh
-docker compose --env-file deploy/.env.production -f compose.production.yml run --rm --no-deps server bootstrap-admin --database-url 'sqlite:///var/lib/acm/db.sqlite?mode=rw' --discord-id '<discord-id>'
+```bash
+sudo docker compose --env-file deploy/.env.production -f compose.production.yml run --rm --no-deps server bootstrap-admin --database-url 'sqlite:///var/lib/acm/db.sqlite?mode=rw' --discord-id '<discord-id>'
 ```
 
-The `mode=rw` URL requires the mounted database to already exist; it does not create one. The command creates no user, promotes only the selected existing account, and is first-admin-only: it refuses missing or duplicate user matches and refuses to run once any administrator exists. Sign out and sign back in after a successful promotion so the new JWT reflects `ADMIN`.
-
-## Frontend deployment
-
-Configure the frontend build environment with public API and WebSocket URLs only:
-
-```text
-NEXT_PUBLIC_API_URL=https://api.example.com
-NEXT_PUBLIC_WS_URL=wss://api.example.com/ws
-```
-
-Replace `api.example.com` with `API_DOMAIN`. Set `FRONTEND_ORIGIN` to the frontend origin for credentialed CORS. The frontend navigates to the API start endpoint; it does not need Discord OAuth values. Set `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET` only on the API host. `DISCORD_REDIRECT_URI` must use the normalized scheme, host, and effective port of `FRONTEND_ORIGIN`, with the `/auth/discord` path and no credentials, query, or fragment; register it in Discord. Rebuild and redeploy the frontend after changing its public API or WebSocket URL. Never put secrets in `NEXT_PUBLIC_*` variables.
-
-Use a shared registrable custom domain for the frontend and API, such as `app.example.com` and `api.example.com`. The session cookie remains `SameSite=Lax`; a raw, unrelated Vercel domain can be blocked by third-party-cookie policies.
-
-## Smoke tests
-
-After containers report healthy, check the public route from the host:
-
-```sh
-set -euo pipefail
-set -a
-. deploy/.env.production
-set +a
-curl --fail --connect-timeout 5 --max-time 10 --resolve "${API_DOMAIN}:443:127.0.0.1" "https://${API_DOMAIN}/healthz"
-docker compose --env-file deploy/.env.production -f compose.production.yml ps
-```
-
-Review logs if a service is not healthy. The public API health endpoint does not run a compilation job.
-
-## Rollback
-
-Keep the previous working repository revision and a current database backup. Before rolling back code, review migration compatibility. If the older code is incompatible with the migrated schema, coordinate restoration of the matching pre-deployment database backup. Then check out the previous revision on the host, run `docker compose ... build`, and `docker compose ... up -d`. Confirm health checks and logs after either action.
-
-## Backup and restore
-
-Stop the server before copying the database. For each backup, create a new empty, uniquely named directory outside `ACM_DATA_DIR`; capture `db.sqlite` and only same-session WAL/SHM sidecars while the server remains stopped:
-
-```sh
-set -euo pipefail
-set -a
-. deploy/.env.production
-set +a
-docker compose --env-file deploy/.env.production -f compose.production.yml stop server
-backup_dir=""
-backup_complete=0
-backup_cleanup() {
-  exit_status=$?
-  trap - EXIT
-  if [ "$exit_status" -ne 0 ]; then
-    if [ -n "$backup_dir" ] && [ "$backup_complete" -eq 0 ]; then
-      sudo touch "$backup_dir/INCOMPLETE" || true
-    fi
-    docker compose --env-file deploy/.env.production -f compose.production.yml start server || true
-  fi
-  exit "$exit_status"
-}
-trap backup_cleanup EXIT
-backup_root=/var/backups/acm # operator-chosen path, outside ACM_DATA_DIR
-quarantine_root=/var/lib/acm-quarantine # choose the ACM_DATA_DIR filesystem if practical
-sudo install -d -m 700 -o root -g root "$backup_root" "$quarantine_root"
-backup_dir="$(sudo mktemp -d "$backup_root/acm-XXXXXXXX")"
-sudo cp "$ACM_DATA_DIR/db.sqlite" "$backup_dir/"
-for sidecar in db.sqlite-wal db.sqlite-shm; do
-  sudo test ! -e "$ACM_DATA_DIR/$sidecar" || sudo cp "$ACM_DATA_DIR/$sidecar" "$backup_dir/"
-done
-backup_complete=1
-docker compose --env-file deploy/.env.production -f compose.production.yml start server
-trap - EXIT
-```
-
-After a successful copy, restart the server as shown. If a later command fails, the EXIT handler marks an unfinished created directory with `INCOMPLETE` and attempts to restart the server while preserving the failure status. Backups containing `INCOMPLETE` are unusable.
-
-To restore, set `backup_dir` to the selected immutable backup directory in the current shell; it does not persist from the backup session. Stop the server, create a new empty quarantine directory, and move the existing database set before copying that one matching backup set:
-
-```sh
-set -euo pipefail
-set -a
-. deploy/.env.production
-set +a
-backup_root=/var/backups/acm # operator-chosen path, outside ACM_DATA_DIR
-quarantine_root=/var/lib/acm-quarantine # choose the ACM_DATA_DIR filesystem if practical
-sudo install -d -m 700 -o root -g root "$backup_root" "$quarantine_root"
-backup_dir="$backup_root/acm-REPLACE_ME"
-sudo test ! -e "$backup_dir/INCOMPLETE"
-sudo test -f "$backup_dir/db.sqlite"
-docker compose --env-file deploy/.env.production -f compose.production.yml stop server
-quarantine_dir="$(sudo mktemp -d "$quarantine_root/acm-XXXXXXXX")"
-for name in db.sqlite db.sqlite-wal db.sqlite-shm; do
-  sudo test ! -e "$ACM_DATA_DIR/$name" || sudo mv "$ACM_DATA_DIR/$name" "$quarantine_dir/"
-done
-sudo cp "$backup_dir/db.sqlite" "$ACM_DATA_DIR/"
-for sidecar in db.sqlite-wal db.sqlite-shm; do
-  sudo test ! -e "$backup_dir/$sidecar" || sudo cp "$backup_dir/$sidecar" "$ACM_DATA_DIR/"
-done
-for name in db.sqlite db.sqlite-wal db.sqlite-shm; do
-  sudo test ! -e "$ACM_DATA_DIR/$name" || sudo chown 10001:10001 "$ACM_DATA_DIR/$name"
-done
-docker compose --env-file deploy/.env.production -f compose.production.yml start server
-```
-
-If a restore copy fails, leave the server stopped. First quarantine any partial restored files in a new directory under `$quarantine_root`; then move the original set from `$quarantine_dir` back into `ACM_DATA_DIR` and start the server. Do not overwrite partial files with the original set. Practice restores outside production first.
+The command creates no user, promotes only one existing account, and refuses missing or duplicate matches or any existing administrator. Sign out and back in after promotion so the JWT reflects `ADMIN`.
 
 ## Security checklist
 
-- Keep `deploy/.env.production` private and out of Git.
-- Restrict `deploy/.env.production` with `chmod 600`; Docker access can read container environment secrets.
+- Keep `deploy/.env.production` root-owned, mode `0600`, private, and out of Git.
 - Use unique production values for `JWT_SECRET` and `DISCORD_SECRET`.
 - Set `FRONTEND_ORIGIN` to one exact HTTPS origin.
-- Do not add a CDN or load balancer without redesigning and configuring trusted-proxy handling; Caddy must not accept arbitrary `X-Forwarded-For` chains.
-- Expose only application ports 80 and 443; restrict administrative host access separately.
-- Back up `ACM_DATA_DIR` and protect backups as application data.
+- Expose only application ports 80 and 443; restrict administrative access separately.
 - Keep Docker and the host patched.
-
-## Existing Caddy volumes
-
-Caddy runs as UID/GID `10001`. If named `/data` or `/config` volumes were created by the former root-running image, migrate their ownership while Caddy is stopped:
-
-```sh
-docker compose --env-file deploy/.env.production -f compose.production.yml stop caddy
-docker compose --env-file deploy/.env.production -f compose.production.yml run --rm --no-deps --user 0:0 --cap-add CHOWN --entrypoint chown caddy -R 10001:10001 /data /config
-docker compose --env-file deploy/.env.production -f compose.production.yml up -d caddy
-```

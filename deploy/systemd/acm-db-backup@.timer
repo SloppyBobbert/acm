@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily ACM database backup timer (%i)
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+Unit=acm-db-backup@%i.service
+
+[Install]
+WantedBy=timers.target

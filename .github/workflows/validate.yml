@@ -1,0 +1,87 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    env:
+      SQLX_OFFLINE: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo check --workspace --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lilith
+    env:
+      NEXT_PUBLIC_API_URL: https://api.example.test
+      NEXT_PUBLIC_WS_URL: wss://api.example.test/ws
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: lilith/yarn.lock
+      - run: corepack enable
+      - run: corepack yarn install --frozen-lockfile
+      - run: corepack yarn lint
+      - run: corepack yarn build
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Bash syntax
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          files=(deploy/**/*.sh scripts/**/*.sh)
+          if ((${#files[@]})); then
+            bash -n "${files[@]}"
+          fi
+      - name: Run deployment semantic tests
+        shell: bash
+        run: |
+          for test_script in deploy/tests/*.sh; do
+            "$test_script"
+          done
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate production Compose configuration
+        shell: bash
+        run: |
+          env_file="${RUNNER_TEMP}/acm-compose.env"
+          umask 077
+          printf '%s\n' \
+            'ACM_DATA_DIR=/var/lib/acm' \
+            'API_DOMAIN=api.example.test' \
+            'JWT_SECRET=placeholder-jwt-secret' \
+            'DISCORD_CLIENT_ID=placeholder-client-id' \
+            'DISCORD_REDIRECT_URI=https://app.example.test/auth/discord' \
+            'DISCORD_SECRET=placeholder-discord-secret' \
+            'FRONTEND_ORIGIN=https://app.example.test' \
+            > "$env_file"
+          docker compose --env-file "$env_file" -f compose.production.yml config --quiet
