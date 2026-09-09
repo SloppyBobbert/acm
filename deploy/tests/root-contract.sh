@@ -10,8 +10,14 @@ pass(){ PASS=$((PASS + 1)); printf 'ok - %s\n' "$1"; }
 fail(){ printf 'not ok - %s\n' "$*" >&2; exit 1; }
 expect_fail(){ local label=$1 needle=$2 out status; shift 2; set +e; out=$("$@" 2>&1); status=$?; set -e; [ "$status" -ne 0 ] || fail "$label unexpectedly succeeded"; [[ "$out" == *"$needle"* ]] || fail "$label missing $needle: $out"; pass "$label"; }
 expect_ok(){ local label=$1 out status; shift; set +e; out=$("$@" 2>&1); status=$?; set -e; [ "$status" = 0 ] || fail "$label failed: $out"; pass "$label"; }
-mode(){ stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"; }
+mode(){ stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 write(){ mkdir -p "$(dirname -- "$1")"; printf '%b' "$2" > "$1"; }
+HOLDER=''
+HOLDER_PID='' HOLDER_CONTROL=''
+stop_holder(){ local i; [ -z "$HOLDER" ] && return; : > "$HOLDER_CONTROL/release"; for i in $(seq 1 30); do kill -0 "$HOLDER_PID" 2>/dev/null || break; sleep 0.1; done; if kill -0 "$HOLDER_PID" 2>/dev/null; then kill -TERM "$HOLDER_PID" 2>/dev/null || true; for i in $(seq 1 10); do kill -0 "$HOLDER_PID" 2>/dev/null || break; sleep 0.1; done; fi; if kill -0 "$HOLDER_PID" 2>/dev/null; then kill -KILL "$HOLDER_PID" 2>/dev/null || true; fi; kill -0 "$HOLDER" 2>/dev/null || wait "$HOLDER" 2>/dev/null || true; HOLDER=''; }
+release_holder(){ : > "$HOLDER_CONTROL/release"; for _ in $(seq 1 30); do kill -0 "$HOLDER_PID" 2>/dev/null || break; sleep 0.1; done; kill -0 "$HOLDER_PID" 2>/dev/null && fail 'lock holder did not release'; wait "$HOLDER" || fail 'lock holder did not exit zero'; HOLDER=''; flock -n "$LOCK" true || fail 'lock was not released after holder cleanup'; }
+start_holder(){ local i; HOLDER_CONTROL="$FIXTURE/flock-control"; mkdir -m 0700 "$HOLDER_CONTROL"; bash "$ROOT/deploy/tests/support/lock-holder.sh" "$LOCK" "$HOLDER_CONTROL" flock & HOLDER=$!; for i in $(seq 1 30); do [ -f "$HOLDER_CONTROL/ready" ] && break; kill -0 "$HOLDER" 2>/dev/null || fail 'lock holder exited before ready'; sleep 0.1; done; [ -f "$HOLDER_CONTROL/ready" ] || fail 'lock holder did not become ready'; HOLDER_PID=$(<"$HOLDER_CONTROL/pid"); [[ "$HOLDER_PID" =~ ^[1-9][0-9]*$ ]] && kill -0 "$HOLDER_PID" 2>/dev/null || fail 'lock holder PID is invalid'; }
+trap stop_holder EXIT
 
 REPO=$FIXTURE/repo DATA=$FIXTURE/data STATE=$FIXTURE/state LOCK=$FIXTURE/locks/acm-operation.lock LOG=$FIXTURE/docker.log
 FLOCK_BIN=flock
@@ -75,12 +81,12 @@ expect_fail 'absent lock is created before state validation' 'deployment state i
 [ "$(mode "$(dirname -- "$LOCK")")" = 700 ] && [ "$(mode "$LOCK")" = 600 ] || fail 'created lock modes are not 0700/0600'; pass 'lock creation uses exact modes'
 expect_fail 'valid lock is reused' 'deployment state is missing' "${COMMON[@]}" rollback-start --backup "$FIXTURE/no"
 if command -v flock >/dev/null 2>&1; then
-  flock "$LOCK" sleep 2 & HOLDER=$!
+  start_holder
   expect_fail 'deployment helper enforces lock contention' 'another ACM operation is active' "${COMMON[@]}" rollback-start --backup "$FIXTURE/no"
   expect_fail 'database helper contends on deployment lock' 'another ACM database operation is active' "${DB[@]}" backup --backup-root "$FIXTURE/backups"
   : > "$LOG"; expect_fail 'standalone build rejects contention before Compose' 'another ACM operation is active' "${COMMON[@]}" build; [ ! -s "$LOG" ] || fail 'standalone build invoked Compose while lock was held'
   : > "$LOG"; expect_fail 'standalone up rejects contention before Compose' 'another ACM operation is active' "${COMMON[@]}" up; [ ! -s "$LOG" ] || fail 'standalone up invoked Compose while lock was held'
-  wait "$HOLDER"; pass 'helpers share the operation lock'
+  release_holder; pass 'helpers share the operation lock'
 else
   printf 'ok - helpers share the operation lock # SKIP flock unavailable\n'
 fi

@@ -10,10 +10,10 @@ pass() { printf 'ok - %s\n' "$1"; }
 expect() { "$@" || fail "command failed: $*"; }
 expect_output() { local expected=$1; shift; local output; output=$("$@") || fail "command failed: $*"; [ "$output" = "$expected" ] || fail "unexpected output: $output"; }
 
-mkdir -p "$FIXTURE/repo/deploy" "$FIXTURE/repo/migrations" "$FIXTURE/data" "$FIXTURE/backups" "$FIXTURE/quarantine" "$FIXTURE/run/lock/acm"
+mkdir -p "$FIXTURE/repo/deploy" "$FIXTURE/repo/migrations" "$FIXTURE/data" "$FIXTURE/backups" "$FIXTURE/quarantine" "$FIXTURE/run/acm"
 chmod 0750 "$FIXTURE/data"
 chmod 0700 "$FIXTURE/backups" "$FIXTURE/quarantine"
-chmod 0700 "$FIXTURE/run/lock/acm"
+chmod 0700 "$FIXTURE/run/acm"
 cp "$ROOT/deploy/acm-deploy.sh" "$ROOT/deploy/acm-db.sh" "$ROOT/deploy/smoke.sh" "$FIXTURE/repo/deploy/"
 cp -R "$ROOT/deploy/systemd" "$FIXTURE/bootstrap-systemd"
 printf 'services: {}\n' > "$FIXTURE/repo/compose.production.yml"
@@ -94,16 +94,16 @@ pass 'production rejects test overrides without gate'
 expect_output 'bootstrap complete; backups remain disabled (run --enable-backups --verified-backup PATH after deployment)' "${common[@]}"
 pass 'ordinary apply emits exact completion output'
 config=$FIXTURE/etc/acm/bootstrap.conf
-[ -f "$config" ] && [ ! -L "$config" ] && [ "$(stat -f '%Lp' "$config" 2>/dev/null || stat -c '%a' "$config")" = 600 ] || fail 'bootstrap config is not regular mode 0600'
+[ -f "$config" ] && [ ! -L "$config" ] && [ "$(stat -c '%a' "$config" 2>/dev/null || stat -f '%Lp' "$config")" = 600 ] || fail 'bootstrap config is not regular mode 0600'
 expected=$(printf 'ACM_REPOSITORY_DIR=%s\nACM_BACKUP_DIR=%s\nACM_QUARANTINE_DIR=%s' "$FIXTURE/repo" "$FIXTURE/backups" "$FIXTURE/quarantine")
 [ "$(<"$config")" = "$expected" ] || fail 'bootstrap config values differ'
 pass 'ordinary apply writes exact private bootstrap config'
 for role_path in "$FIXTURE/data:data" "$FIXTURE/backups:backup" "$FIXTURE/quarantine:quarantine"; do path=${role_path%%:*}; role=${role_path#*:}; [ "$(<"$path/.acm-managed")" = "acm-managed-v1:$role" ] || fail "missing $role marker"; done
 pass 'ordinary apply writes managed role markers'
-[ "$(stat -f '%Lp' "$FIXTURE/data" 2>/dev/null || stat -c '%a' "$FIXTURE/data")" = 750 ] && [ "$(stat -f '%Lp' "$FIXTURE/backups" 2>/dev/null || stat -c '%a' "$FIXTURE/backups")" = 700 ] && [ "$(stat -f '%Lp' "$FIXTURE/quarantine" 2>/dev/null || stat -c '%a' "$FIXTURE/quarantine")" = 700 ] || fail 'bootstrap managed directory modes differ from role contracts'
+[ "$(stat -c '%a' "$FIXTURE/data" 2>/dev/null || stat -f '%Lp' "$FIXTURE/data")" = 750 ] && [ "$(stat -c '%a' "$FIXTURE/backups" 2>/dev/null || stat -f '%Lp' "$FIXTURE/backups")" = 700 ] && [ "$(stat -c '%a' "$FIXTURE/quarantine" 2>/dev/null || stat -f '%Lp' "$FIXTURE/quarantine")" = 700 ] || fail 'bootstrap managed directory modes differ from role contracts'
 pass 'ordinary apply preserves managed role modes'
-[ -d "$FIXTURE/run/lock/acm" ] && [ ! -L "$FIXTURE/run/lock/acm" ] && [ "$(stat -f '%Lp' "$FIXTURE/run/lock/acm" 2>/dev/null || stat -c '%a' "$FIXTURE/run/lock/acm")" = 700 ] || fail 'bootstrap lock directory is not mode 0700'
-[ -f "$FIXTURE/run/lock/acm/acm-operation.lock" ] && [ ! -L "$FIXTURE/run/lock/acm/acm-operation.lock" ] && [ "$(stat -f '%Lp' "$FIXTURE/run/lock/acm/acm-operation.lock" 2>/dev/null || stat -c '%a' "$FIXTURE/run/lock/acm/acm-operation.lock")" = 600 ] || fail 'bootstrap lock is not regular mode 0600'
+[ -d "$FIXTURE/run/acm" ] && [ ! -L "$FIXTURE/run/acm" ] && [ "$(stat -c '%a' "$FIXTURE/run/acm" 2>/dev/null || stat -f '%Lp' "$FIXTURE/run/acm")" = 700 ] || fail 'bootstrap lock directory is not mode 0700'
+[ -f "$FIXTURE/run/acm/acm-operation.lock" ] && [ ! -L "$FIXTURE/run/acm/acm-operation.lock" ] && [ "$(stat -c '%a' "$FIXTURE/run/acm/acm-operation.lock" 2>/dev/null || stat -f '%Lp' "$FIXTURE/run/acm/acm-operation.lock")" = 600 ] || fail 'bootstrap lock is not regular mode 0600'
 pass 'ordinary apply creates the private operation lock directory and lock'
 grep -Fq 'install -m 0755' "$LOG" && grep -Fq 'acm-deploy.sh' "$LOG" && grep -Fq 'acm-db.sh' "$LOG" && grep -Fq 'smoke.sh' "$LOG" || fail 'stable helper installs missing'
 ! grep -Fq 'enable --now acm-db-backup@daily.timer' "$LOG" || fail 'ordinary apply enabled timer'
@@ -117,8 +117,8 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$flock"; chmod 0755 "$flock"
 backup=$(env ACM_DB_TEST_MODE=1 ACM_DATA_DIR="$FIXTURE/data" ACM_ENV_FILE="$FIXTURE/repo/deploy/production.env" ACM_DOCKER_BIN="$docker" ACM_FLOCK_BIN="$flock" ACM_DB_LOCK_PATH="$FIXTURE/db.lock" "$FIXTURE/repo/deploy/acm-db.sh" --repository-dir "$FIXTURE/repo" backup --backup-root "$FIXTURE/backups")
 backup=${backup#BACKUP_DIR=}
 [ -d "$backup" ] || fail 'real helper did not create verified backup'
-[ "$(stat -f '%Lp' "$backup" 2>/dev/null || stat -c '%a' "$backup")" = 500 ] || fail 'verified backup directory is not mode 0500'
-for payload in "$backup"/*; do [ "$(stat -f '%Lp' "$payload" 2>/dev/null || stat -c '%a' "$payload")" = 400 ] || fail "verified backup payload is not mode 0400: $payload"; done
+[ "$(stat -c '%a' "$backup" 2>/dev/null || stat -f '%Lp' "$backup")" = 500 ] || fail 'verified backup directory is not mode 0500'
+for payload in "$backup"/*; do [ "$(stat -c '%a' "$payload" 2>/dev/null || stat -f '%Lp' "$payload")" = 400 ] || fail "verified backup payload is not mode 0400: $payload"; done
 pass 'real helper seals completed backup modes'
 backup_before=$(cksum "$backup/metadata.txt" "$backup/manifest.sha256")
 chmod 0640 "$config"

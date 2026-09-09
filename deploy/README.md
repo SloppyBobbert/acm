@@ -39,7 +39,7 @@ sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)" verify --back
 sudo deploy/bootstrap-ubuntu.sh --enable-backups --verified-backup "$backup_dir"
 ```
 
-The persistent daily `acm-db-backup@daily.timer` runs the installed stable helper under the sole host operation lock, `/run/lock/acm/acm-operation.lock`. Its child directory is `root:root` mode `0700` and its file is `root:root` mode `0600`. Bootstrap or the first mutating root helper creates or reuses those child objects after reboot; neither changes the global `/run/lock` directory. The timer is enabled only by the final command above.
+The persistent daily `acm-db-backup@daily.timer` runs the installed stable helper under the sole host operation lock, `/run/acm/acm-operation.lock`. Its directory is `root:root` mode `0700` and its file is `root:root` mode `0600`. Bootstrap or the first mutating root helper creates or reuses those objects after reboot; neither changes the global `/run/lock` directory. The timer is enabled only by the final command above.
 
 ## Updates
 

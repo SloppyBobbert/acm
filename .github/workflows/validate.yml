@@ -19,6 +19,8 @@ jobs:
       SQLX_OFFLINE: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -37,6 +39,8 @@ jobs:
       NEXT_PUBLIC_WS_URL: wss://api.example.test/ws
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -51,6 +55,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Check Bash syntax
         shell: bash
         run: |
@@ -82,6 +88,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Validate production Compose configuration
         shell: bash
         run: |

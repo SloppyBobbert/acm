@@ -5,9 +5,28 @@ IFS=$'\n\t'
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 fail() { printf 'not ok - %s\n' "$*" >&2; exit 1; }
 pass() { printf 'ok - %s\n' "$1"; }
+safe_tmpdir() {
+  local path="${TMPDIR:-$HOME/.acm-deploy-tests}" current mode
+  if [ -z "${TMPDIR+x}" ]; then
+    [ -d "$HOME" ] && [ ! -L "$HOME" ] || fail 'home directory is unsafe for retained fixtures'
+    mkdir -m 0700 "$path" 2>/dev/null || true
+  fi
+  [ -d "$path" ] && [ ! -L "$path" ] || fail 'TMPDIR must be a real directory'
+  path=$(CDPATH= cd -- "$path" && pwd -P)
+  [ "$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path")" = 700 ] || fail 'TMPDIR must be mode 0700'
+  current="$path"
+  while [ "$current" != / ]; do
+    mode=$(stat -c '%a' "$current" 2>/dev/null || stat -f '%Lp' "$current")
+    [ $((8#$mode & 0022)) -eq 0 ] || fail "TMPDIR has a writable ancestor: $current"
+    [ ! -L "$current" ] || fail "TMPDIR has a symlink ancestor: $current"
+    current=$(dirname -- "$current")
+  done
+  printf '%s\n' "$path"
+}
+TEST_TMPDIR=$(safe_tmpdir)
 
 new_fixture() {
-  FIXTURE=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/acm-db-migrations.XXXXXX")" && pwd -P)
+  FIXTURE=$(CDPATH= cd -- "$(mktemp -d "$TEST_TMPDIR/acm-db-migrations.XXXXXX")" && pwd -P)
   mkdir -p "$FIXTURE/repo/deploy" "$FIXTURE/repo/migrations/nested" "$FIXTURE/data" "$FIXTURE/backups"
   chmod 0750 "$FIXTURE/data"; chmod 0700 "$FIXTURE/backups"
   cp "$ROOT/deploy/acm-db.sh" "$FIXTURE/repo/deploy/acm-db.sh"

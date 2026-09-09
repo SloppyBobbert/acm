@@ -6,7 +6,7 @@ readonly DEFAULT_REPOSITORY_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 readonly MARKER_NAME=.acm-managed
 readonly MARKER_VERSION=acm-managed-v1
 BOOTSTRAP_CONF=/etc/acm/bootstrap.conf
-LOCK_PATH=/run/lock/acm/acm-operation.lock
+LOCK_PATH=/run/acm/acm-operation.lock
 LOCK_RUN_DIR=/run
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
 TEST_MODE=${ACM_BOOTSTRAP_TEST_MODE:-0}
@@ -20,12 +20,13 @@ TEST_ROOT=${ACM_BOOTSTRAP_TEST_ROOT:-}
 TEST_RUNNER=${ACM_BOOTSTRAP_TEST_RUNNER:-}
 TEST_ENV_FILE=${ACM_BOOTSTRAP_TEST_ENV_FILE:-}
 if [ "$TEST_MODE" = 1 ]; then
+  [ "$(id -u)" -ne 0 ] || fail 'test mode must not run as root'
   [[ "$TEST_ROOT" =~ ^/[A-Za-z0-9._/-]+$ ]] && [ "$TEST_ROOT" != / ] && [[ "$TEST_ROOT" != *//* && "$TEST_ROOT" != */./* && "$TEST_ROOT" != */../* && "$TEST_ROOT" != */. && "$TEST_ROOT" != */.. && "$TEST_ROOT" != */ ]] && [ -d "$TEST_ROOT" ] && [ ! -L "$TEST_ROOT" ] || fail 'test root must be a normalized existing non-symlink path other than /'
   [ -x "$TEST_RUNNER" ] && [ ! -L "$TEST_RUNNER" ] || fail 'test runner must be an executable non-symlink path'
   [ -z "$TEST_ENV_FILE" ] || { [[ "$TEST_ENV_FILE" == "$TEST_ROOT"/* ]] && [ -f "$TEST_ENV_FILE" ] && [ ! -L "$TEST_ENV_FILE" ]; } || fail 'test environment file must be a regular non-symlink below test root'
   BOOTSTRAP_CONF="$TEST_ROOT/etc/acm/bootstrap.conf"
   LOCK_RUN_DIR="$TEST_ROOT/run"
-  LOCK_PATH="$LOCK_RUN_DIR/lock/acm/acm-operation.lock"
+  LOCK_PATH="$LOCK_RUN_DIR/acm/acm-operation.lock"
 fi
 
 check_only=0; configure_firewall_requested=0; adopt_existing_paths=0; enable_backups=0; verified_backup=''
@@ -312,7 +313,6 @@ install_units() {
 prepare_lock() {
   local lock_dir
   require_safe_root_directory "$LOCK_RUN_DIR"
-  require_safe_root_directory "$LOCK_RUN_DIR/lock"
   lock_dir=$(dirname -- "$LOCK_PATH")
   if [ ! -e "$lock_dir" ] && [ ! -L "$lock_dir" ]; then
     run_root mkdir -m 0700 -- "$lock_dir" 2>/dev/null || true

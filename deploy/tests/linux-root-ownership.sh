@@ -5,7 +5,7 @@ IFS=$'\n\t'
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 if [ "$(uname -s)" = Darwin ]; then
-  printf '1..1 # SKIP Linux root ownership integration is not applicable on Darwin\n'
+  printf '1..0 # SKIP Linux root ownership integration is not applicable on Darwin\n'
   exit 0
 fi
 if ! sudo -n true; then
@@ -21,6 +21,12 @@ expect_fail(){ local label=$1 needle=$2 out status; shift 2; set +e; out=$("$@" 
 expect_ok(){ local label=$1 out status; shift; set +e; out=$("$@" 2>&1); status=$?; set -e; [ "$status" = 0 ] || fail "$label failed: $out"; pass "$label"; }
 mode(){ sudo stat -c '%a' "$1"; }
 owner(){ sudo stat -c '%u:%g' "$1"; }
+HOLDER=''
+HOLDER_CONTROL='' HOLDER_PID=''
+stop_holder(){ local i; [ -z "$HOLDER" ] && return; sudo sh -c ': > "$1/release"' sh "$HOLDER_CONTROL"; for i in $(seq 1 30); do sudo kill -0 "$HOLDER_PID" 2>/dev/null || break; sleep 0.1; done; if sudo kill -0 "$HOLDER_PID" 2>/dev/null; then sudo kill -TERM "$HOLDER_PID" 2>/dev/null || true; for i in $(seq 1 10); do sudo kill -0 "$HOLDER_PID" 2>/dev/null || break; sleep 0.1; done; fi; sudo kill -0 "$HOLDER_PID" 2>/dev/null && sudo kill -KILL "$HOLDER_PID" 2>/dev/null || true; kill -0 "$HOLDER" 2>/dev/null || wait "$HOLDER" 2>/dev/null || true; HOLDER=''; }
+release_holder(){ local i; sudo sh -c ': > "$1/release"' sh "$HOLDER_CONTROL"; for i in $(seq 1 30); do sudo kill -0 "$HOLDER_PID" 2>/dev/null || break; sleep 0.1; done; sudo kill -0 "$HOLDER_PID" 2>/dev/null && fail 'production lock holder did not release'; wait "$HOLDER" || fail 'production lock holder did not exit zero'; HOLDER=''; sudo flock -n /run/acm/acm-operation.lock true || fail 'production lock was not released after holder cleanup'; }
+start_holder(){ local i; HOLDER_CONTROL="$FIXTURE/flock-control"; sudo install -d -o root -g root -m 0700 "$HOLDER_CONTROL"; sudo "$ROOT/deploy/tests/support/lock-holder.sh" /run/acm/acm-operation.lock "$HOLDER_CONTROL" flock & HOLDER=$!; for i in $(seq 1 30); do sudo test -f "$HOLDER_CONTROL/ready" && break; kill -0 "$HOLDER" 2>/dev/null || fail 'production lock holder exited before ready'; sleep 0.1; done; sudo test -f "$HOLDER_CONTROL/ready" || fail 'production lock holder did not become ready'; HOLDER_PID=$(sudo sh -c 'cat "$1/pid"' sh "$HOLDER_CONTROL"); [[ "$HOLDER_PID" =~ ^[1-9][0-9]*$ ]] && sudo kill -0 "$HOLDER_PID" 2>/dev/null || fail 'production lock holder PID is invalid'; }
+trap stop_holder EXIT
 
 sudo install -d -o root -g root -m 0755 "$FIXTURE" "$FIXTURE/repo" "$FIXTURE/repo/deploy" "$FIXTURE/repo/migrations" "$FIXTURE/bin"
 sudo install -d -o 10001 -g 10001 -m 0750 "$FIXTURE/data"
@@ -88,17 +94,17 @@ expect_ok 'production initial completes with controlled lifecycle tools' sudo en
 [ "$(sudo stat -c '%u:%g:%a' /run/lock)" = "$before_lock" ] || fail 'initial modified global /run/lock'
 [ "$(owner "$FIXTURE/data")" = 10001:10001 ] && [ "$(mode "$FIXTURE/data")" = 750 ] || fail 'data directory ownership or mode is unsafe'
 pass 'initial preserves global /run/lock and data directory contract'
-[ "$(mode /run/lock/acm)" = 700 ] && [ "$(mode /run/lock/acm/acm-operation.lock)" = 600 ] && [ "$(owner /run/lock/acm)" = 0:0 ] && [ "$(owner /run/lock/acm/acm-operation.lock)" = 0:0 ] || fail 'global lock ownership or modes are unsafe'
-pass 'global lock has exact root ownership and modes'
+[ "$(mode /run/acm)" = 700 ] && [ "$(mode /run/acm/acm-operation.lock)" = 600 ] && [ "$(owner /run/acm)" = 0:0 ] && [ "$(owner /run/acm/acm-operation.lock)" = 0:0 ] || fail 'operation lock ownership or modes are unsafe'
+pass 'operation lock has exact root ownership and modes'
 sudo grep -Fxq 'phase=complete' "$FIXTURE/repo/.local/deploy/production-state.env" && sudo grep -Fxq 'status=completed' "$FIXTURE/repo/.local/deploy/production-state.env" || fail 'initial state is not complete'
 grep -Fq 'docker compose ' "$FIXTURE/operations.log" && grep -Fq ' build' "$FIXTURE/operations.log" && grep -Fq ' up -d --wait' "$FIXTURE/operations.log" || fail 'initial did not build and start the stack'
 for service in caddy server ramiel; do grep -Fq "ps -q $service" "$FIXTURE/operations.log" || fail "smoke did not inspect $service"; done
 grep -Fq 'https://api.ownership.test/healthz' "$FIXTURE/operations.log" || fail 'smoke did not request the public API URL'
 pass 'initial builds, starts, smokes three services, and checks the public URL without live Docker or network access'
 if command -v flock >/dev/null 2>&1; then
-  sudo flock /run/lock/acm/acm-operation.lock sleep 2 & HOLDER=$!
+  start_holder
   expect_fail 'database helper contends with the global deployment lock' 'another ACM database operation is active' sudo env PATH="$FIXTURE/bin:$PATH" MOCK_LOG="$FIXTURE/operations.log" "$ROOT/deploy/acm-db.sh" --repository-dir "$FIXTURE/repo" backup --backup-root "$FIXTURE/backups"
-  wait "$HOLDER"; pass 'production helpers contend on the global lock'
+  release_holder; pass 'production helpers contend on the global lock'
 else
   printf 'ok - production helpers contend on the global lock # SKIP flock unavailable\n'
 fi

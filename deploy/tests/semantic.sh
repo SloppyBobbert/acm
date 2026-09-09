@@ -5,12 +5,31 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
-FIXTURE=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/acm-semantic.XXXXXX")" && pwd -P)
 PASS=0; SKIP=0
 
 pass() { PASS=$((PASS + 1)); printf 'ok - %s\n' "$1"; }
 skip() { SKIP=$((SKIP + 1)); printf 'ok - %s # SKIP %s\n' "$1" "$2"; }
 fail() { printf 'not ok - %s\n' "$*" >&2; exit 1; }
+safe_tmpdir() {
+  local path="${TMPDIR:-$HOME/.acm-deploy-tests}" current mode
+  if [ -z "${TMPDIR+x}" ]; then
+    [ -d "$HOME" ] && [ ! -L "$HOME" ] || fail 'home directory is unsafe for retained fixtures'
+    mkdir -m 0700 "$path" 2>/dev/null || true
+  fi
+  [ -d "$path" ] && [ ! -L "$path" ] || fail 'TMPDIR must be a real directory'
+  path=$(CDPATH= cd -- "$path" && pwd -P)
+  [ "$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path")" = 700 ] || fail 'TMPDIR must be mode 0700'
+  current="$path"
+  while [ "$current" != / ]; do
+    mode=$(stat -c '%a' "$current" 2>/dev/null || stat -f '%Lp' "$current")
+    [ $((8#$mode & 0022)) -eq 0 ] || fail "TMPDIR has a writable ancestor: $current"
+    [ ! -L "$current" ] || fail "TMPDIR has a symlink ancestor: $current"
+    current=$(dirname -- "$current")
+  done
+  printf '%s\n' "$path"
+}
+TEST_TMPDIR=$(safe_tmpdir)
+FIXTURE=$(CDPATH= cd -- "$(mktemp -d "$TEST_TMPDIR/acm-semantic.XXXXXX")" && pwd -P)
 expect_fail() { local label=$1 needle=$2; shift 2; local out status; set +e; out=$("$@" 2>&1); status=$?; set -e; [ "$status" -ne 0 ] || fail "$label unexpectedly succeeded"; [[ "$out" == *"$needle"* ]] || fail "$label missing '$needle': $out"; pass "$label"; }
 expect_ok() { local label=$1; shift; local out status; set +e; out=$("$@" 2>&1); status=$?; set -e; [ "$status" = 0 ] || fail "$label failed: $out"; pass "$label"; }
 expect_status() { local label=$1 expected=$2; shift 2; local status; set +e; "$@" >/dev/null 2>&1; status=$?; set -e; [ "$status" = "$expected" ] || fail "$label returned $status, expected $expected"; pass "$label"; }
@@ -90,6 +109,9 @@ db_tests() {
   make_repo "$repo"; mkdir -p "$data" "$backups"; chmod 0750 "$data"; chmod 0700 "$backups"; write "$data/db.sqlite" database
   make_docker "$docker" "$log"
   write "$flockbin" '#!/usr/bin/env bash\nexit 0\n'; chmod +x "$flockbin"
+  out=$("$ROOT/deploy/acm-db.sh" --repository-dir "$FIXTURE/no-config" --help) || fail 'acm-db help required configuration'
+  [[ "$out" == *'[--repository-dir ABSOLUTE_PATH] metadata'* ]] || fail 'acm-db help omits global repository option for metadata'
+  pass 'acm-db help is configuration-free and documents global repository option'
   expect_fail 'acm-db rejects production override' 'override requires ACM_DB_TEST_MODE=1' env ACM_DATA_DIR="$data" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" backup --backup-root "$backups"
   for quote in plain single double; do
     case "$quote" in plain) value="$data";; single) value="'$data'";; double) value="\"$data\"";; esac
@@ -102,6 +124,12 @@ db_tests() {
   expect_fail 'acm-db does not execute malicious dotenv' 'absolute, literal path' env ACM_DB_TEST_MODE=1 ACM_ENV_FILE="$envfile" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" verify --backup-dir "$backups"
   [ ! -e "$FIXTURE/dotenv-executed" ] || fail 'dotenv payload executed'
   pass 'acm-db leaves malicious dotenv inert'
+  write "$envfile" "ACM_DATA_DIR=$data\nACM_DATA_DIR=$data\n"
+  chmod 0600 "$envfile"
+  expect_fail 'acm-db propagates duplicate data locator errors' 'duplicate ACM_DATA_DIR' env ACM_DB_TEST_MODE=1 ACM_ENV_FILE="$envfile" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" verify --backup-dir "$backups"
+  write "$envfile" 'ACM_DATA_DIR=\n'
+  chmod 0600 "$envfile"
+  expect_fail 'acm-db propagates empty data locator errors' 'must be an absolute, literal path' env ACM_DB_TEST_MODE=1 ACM_ENV_FILE="$envfile" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" verify --backup-dir "$backups"
   write "$envfile" "ACM_DATA_DIR=$data\n"
   chmod 0600 "$envfile"
   out=$(env ACM_DB_TEST_MODE=1 ACM_ENV_FILE="$envfile" ACM_DOCKER_BIN="$docker" ACM_FLOCK_BIN="$flockbin" ACM_DB_LOCK_PATH="$lock" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" backup --backup-root "$backups")
@@ -109,8 +137,8 @@ db_tests() {
   expect_ok 'acm-db emits valid backup metadata' env ACM_DB_TEST_MODE=1 ACM_ENV_FILE="$envfile" ACM_DOCKER_BIN="$docker" ACM_FLOCK_BIN="$flockbin" ACM_DB_LOCK_PATH="$lock" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" metadata --backup-dir "$backup"
   local default_quarantine="$FIXTURE/.acm-quarantine" data_filesystem parent_filesystem
   [ ! -e "$default_quarantine" ] || fail 'default dry-run quarantine fixture already exists'
-  data_filesystem=$(stat -f '%d' "$data" 2>/dev/null || stat -c '%d' "$data")
-  parent_filesystem=$(stat -f '%d' "$FIXTURE" 2>/dev/null || stat -c '%d' "$FIXTURE")
+  data_filesystem=$(stat -c '%d' "$data" 2>/dev/null || stat -f '%d' "$data")
+  parent_filesystem=$(stat -c '%d' "$FIXTURE" 2>/dev/null || stat -f '%d' "$FIXTURE")
   [ "$data_filesystem" = "$parent_filesystem" ] || fail 'dry-run quarantine parent is not on the data filesystem'
   : > "$log"
   expect_ok 'acm-db dry-run accepts absent default quarantine without mutation' env ACM_DB_TEST_MODE=1 ACM_ENV_FILE="$envfile" ACM_DOCKER_BIN="$docker" ACM_FLOCK_BIN="$flockbin" ACM_DB_LOCK_PATH="$lock" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" restore --backup-dir "$backup" --yes-restore --dry-run
@@ -138,9 +166,21 @@ db_tests() {
   expect_fail 'acm-db rejects unknown backup file' 'unknown backup file' env ACM_DB_TEST_MODE=1 ACM_ENV_FILE="$envfile" ACM_DOCKER_BIN="$docker" ACM_FLOCK_BIN="$flockbin" ACM_DB_LOCK_PATH="$lock" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" verify --backup-dir "$backup"
   # Hold the shared global lock. Restore must fail at lock acquisition, before malformed backup verification.
   if command -v flock >/dev/null 2>&1; then
-    flock "$lock" sleep 2 & local holder=$!
-    expect_fail 'acm-db restore locks before backup verification' 'another ACM database operation is active' env ACM_DB_TEST_MODE=1 ACM_DOCKER_BIN="$docker" ACM_DB_LOCK_PATH="$lock" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" restore --backup-dir "$backup" --yes-restore
-    wait "$holder"; pass 'acm-db global lock contention is enforced'
+    (
+      local holder='' actual='' control="$FIXTURE/db-flock-control" i
+      mkdir -m 0700 "$control"
+      bash "$ROOT/deploy/tests/support/lock-holder.sh" "$lock" "$control" flock & holder=$!
+      trap '[ -z "$holder" ] || { kill "$holder" 2>/dev/null || true; wait "$holder" 2>/dev/null || true; }' EXIT
+      for i in $(seq 1 30); do [ -f "$control/ready" ] && break; kill -0 "$holder" 2>/dev/null || fail 'database lock holder exited before ready'; sleep 0.1; done
+      [ -f "$control/ready" ] || fail 'database lock holder did not become ready'
+      actual=$(<"$control/pid"); [[ "$actual" =~ ^[1-9][0-9]*$ ]] && kill -0 "$actual" 2>/dev/null || fail 'database lock holder PID is invalid'
+      expect_fail 'acm-db restore locks before backup verification' 'another ACM database operation is active' env ACM_DB_TEST_MODE=1 ACM_DOCKER_BIN="$docker" ACM_DB_LOCK_PATH="$lock" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" restore --backup-dir "$backup" --yes-restore
+      : > "$control/release"; for i in $(seq 1 30); do kill -0 "$actual" 2>/dev/null || break; sleep 0.1; done
+      kill -0 "$actual" 2>/dev/null && fail 'database lock holder did not release'
+      wait "$holder"; holder=''
+      flock -n "$lock" true || fail 'database lock was not released after holder cleanup'
+    )
+    pass 'acm-db global lock contention is enforced'
   else
     skip 'acm-db lock contention' 'flock is unavailable on this host'
   fi
@@ -189,7 +229,8 @@ deploy_tests() {
   while IFS= read -r line; do case "$line" in created_utc=*) created=${line#*=};; source_revision=*) revision=${line#*=};; esac; done < "$bad_backup/metadata.txt"
   bad_migration=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   printf 'created_utc=%s\nformat=acm-sqlite-backup-v2\nsource_revision=%s\nmigration_identity=%s\n' "$created" "$revision" "$bad_migration" > "$bad_backup/metadata.txt"
-  metadata_hash=$(shasum -a 256 "$bad_backup/metadata.txt" | cut -d ' ' -f 1); db_hash=$(shasum -a 256 "$bad_backup/db.sqlite" | cut -d ' ' -f 1)
+  hash_file(){ if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d ' ' -f 1; else shasum -a 256 "$1" | cut -d ' ' -f 1; fi; }
+  metadata_hash=$(hash_file "$bad_backup/metadata.txt"); db_hash=$(hash_file "$bad_backup/db.sqlite")
   printf 'format=acm-sqlite-manifest-v2\nsource_revision=%s\nmigration_identity=%s\nmetadata_sha256=%s\n%s  db.sqlite\n' "$revision" "$bad_migration" "$metadata_hash" "$db_hash" > "$bad_backup/manifest.sha256"
   chmod 0400 "$bad_backup"/*
   chmod 0500 "$bad_backup"
@@ -209,7 +250,7 @@ deploy_tests() {
   grep -Fxq 'phase=rollback_prepared' "$state/production-state.env" || fail 'rollback state is not rollback_prepared'
   grep -Fxq 'status=prepared' "$state/production-state.env" || fail 'rollback state is not prepared'
   pass 'rollback records rollback_prepared without up or smoke'
-  state_mode=$(stat -f '%Lp' "$state/production-state.env" 2>/dev/null || stat -c '%a' "$state/production-state.env")
+  state_mode=$(stat -c '%a' "$state/production-state.env" 2>/dev/null || stat -f '%Lp' "$state/production-state.env")
   [ "$state_mode" = 600 ] || fail "rollback state mode is $state_mode, expected 600"
   pass 'rollback state is mode 0600'
   expect_fail 'prepared state cannot be overwritten' 'existing deployment state is not completed' "${common[@]}" deploy "$rev1" --backup "$backup"
@@ -245,7 +286,7 @@ deploy_tests() {
 }
 
 smoke_tests() {
-  local envfile="$FIXTURE/smoke.env" compose="$FIXTURE/smoke.yml" docker="$FIXTURE/docker-smoke" log="$FIXTURE/smoke.log" timeoutbin="$FIXTURE/timeout" timeoutlog="$FIXTURE/timeout.log" curlbin="$FIXTURE/curl" wrapper_count
+  local envfile="$FIXTURE/smoke.env" compose="$FIXTURE/smoke.yml" docker="$FIXTURE/docker-smoke" log="$FIXTURE/smoke.log" timeoutbin="$FIXTURE/timeout" timeoutlog="$FIXTURE/timeout.log" curlbin="$FIXTURE/curl" curllog="$FIXTURE/curl.log" wrapper_count out
   write "$envfile" 'API_DOMAIN=api.example.test\n'; write "$compose" 'services: {}\n'; make_docker "$docker" "$log" hang
   write "$timeoutbin" '#!/usr/bin/env bash
 printf "%s\\n" "$*" >> "${MOCK_TIMEOUT_LOG:?}"
@@ -257,10 +298,20 @@ shift; shift; "$@"
   expect_fail 'smoke leaves malicious env inert' 'missing or invalid' env MOCK_TIMEOUT_LOG="$timeoutlog" SMOKE_TEST_MODE=1 SMOKE_ENV_FILE="$envfile" SMOKE_COMPOSE_FILE="$compose" SMOKE_TIMEOUT_BIN="$timeoutbin" "$ROOT/deploy/smoke.sh" --test-mode
   [ ! -e "$FIXTURE/smoke-executed" ] || fail 'smoke dotenv payload executed'; pass 'smoke does not execute env input'
   write "$envfile" 'API_DOMAIN=api.example.test\n'
+  out=$(env HTTPS_PROXY=http://proxy.invalid:8080 SMOKE_TEST_MODE=1 SMOKE_ENV_FILE="$envfile" SMOKE_COMPOSE_FILE="$compose" "$ROOT/deploy/smoke.sh" --test-mode --dry-run)
+  [[ "$out" != *'--noproxy '* ]] || fail 'smoke DNS dry-run unexpectedly bypasses proxy'
+  pass 'smoke DNS dry-run preserves proxy routing'
+  out=$(env HTTPS_PROXY=http://proxy.invalid:8080 SMOKE_TEST_MODE=1 SMOKE_ENV_FILE="$envfile" SMOKE_COMPOSE_FILE="$compose" "$ROOT/deploy/smoke.sh" --test-mode --dry-run --resolve)
+  [[ "$out" == *'--resolve api.example.test:443:127.0.0.1 --noproxy api.example.test '* ]] || fail 'smoke dry-run omits local resolve proxy bypass'
+  pass 'smoke dry-run prints local resolve proxy bypass'
+  write "$curlbin" '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "${MOCK_CURL_LOG:?}"\n'; chmod +x "$curlbin"; make_docker "$docker" "$log"
+  : > "$curllog"; expect_ok 'smoke local resolve bypasses proxy' env HTTPS_PROXY=http://proxy.invalid:8080 MOCK_TIMEOUT_LOG="$timeoutlog" MOCK_CURL_LOG="$curllog" SMOKE_TEST_MODE=1 SMOKE_ENV_FILE="$envfile" SMOKE_COMPOSE_FILE="$compose" SMOKE_DOCKER_BIN="$docker" SMOKE_TIMEOUT_BIN="$timeoutbin" SMOKE_CURL_BIN="$curlbin" SMOKE_RETRIES=1 SMOKE_RETRY_DELAY=0 SMOKE_DEADLINE_SECONDS=5 SMOKE_COMMAND_TIMEOUT=1 "$ROOT/deploy/smoke.sh" --test-mode --resolve
+  grep -Fq -- '--resolve api.example.test:443:127.0.0.1 --noproxy api.example.test' "$curllog" || fail 'smoke local resolve curl omitted proxy bypass'
+  pass 'smoke local resolve curl uses proxy bypass'
   make_docker "$docker" "$log" health-fail
   : > "$timeoutlog"
   expect_fail 'smoke distinguishes unhealthy service' 'service not healthy' env MOCK_TIMEOUT_LOG="$timeoutlog" SMOKE_TEST_MODE=1 SMOKE_ENV_FILE="$envfile" SMOKE_COMPOSE_FILE="$compose" SMOKE_DOCKER_BIN="$docker" SMOKE_TIMEOUT_BIN="$timeoutbin" SMOKE_CURL_BIN="$curlbin" SMOKE_RETRIES=1 SMOKE_RETRY_DELAY=0 SMOKE_DEADLINE_SECONDS=1 SMOKE_COMMAND_TIMEOUT=1 "$ROOT/deploy/smoke.sh" --test-mode
-  wrapper_count=$(grep -c -- "$ROOT/deploy/smoke.sh" "$timeoutlog")
+  wrapper_count=$(grep -c -- "$ROOT/deploy/smoke.sh" "$timeoutlog" || true)
   [ "$wrapper_count" = 1 ] || fail "smoke wrapper re-executed $wrapper_count times"
   pass 'smoke executes exactly one deadline wrapper'
   local health_status

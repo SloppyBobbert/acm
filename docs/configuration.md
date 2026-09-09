@@ -1,6 +1,6 @@
 # Configuration
 
-Copy the example files before local or production use. Do not put real secrets in the repository. The server reads Clap options from matching environment variables; command-line options take precedence.
+Copy the example files for local development only. Do not put real secrets in the repository. The production Compose section below is authoritative for production configuration. The server reads Clap options from matching environment variables; command-line options take precedence.
 
 ## Server and local development
 
@@ -73,4 +73,4 @@ Production Caddy has fixed address `172.30.0.2` on the private `172.30.0.0/24` e
 
 ## Bootstrap configuration
 
-`deploy/bootstrap-ubuntu.sh` writes `/etc/acm/bootstrap.conf`, owned by `root:root` with mode `0600`. It records the normalized repository, backup, and quarantine paths for the stable helpers. Bootstrap-managed data is `10001:10001` mode `0750` with root-owned non-writable ancestors; backup and quarantine roots are `root:root` mode `0700`; deployment state is `root:root` mode `0700` with mode-`0600` state files. Bootstrap-managed directories contain an `.acm-managed` marker; a nonempty unmarked directory requires reviewed, explicit `--adopt-existing-paths` adoption. Defaults are `/var/lib/acm`, `/var/backups/acm`, and `/var/lib/acm-quarantine`. The sole operation lock is `/run/lock/acm/acm-operation.lock`; bootstrap may create or reuse its private child directory and lock file but does not modify global `/run/lock`.
+`deploy/bootstrap-ubuntu.sh` writes `/etc/acm/bootstrap.conf`, owned by `root:root` with mode `0600`. It records the normalized repository, backup, and quarantine paths for the stable helpers. Bootstrap-managed data is `10001:10001` mode `0750` with root-owned non-writable ancestors; backup and quarantine roots are `root:root` mode `0700`; deployment state is `root:root` mode `0700` with mode-`0600` state files. Bootstrap-managed directories contain an `.acm-managed` marker; a nonempty unmarked directory requires reviewed, explicit `--adopt-existing-paths` adoption. Defaults are `/var/lib/acm`, `/var/backups/acm`, and `/var/lib/acm-quarantine`. The sole operation lock is `/run/acm/acm-operation.lock`; bootstrap may create or reuse its private directory and lock file but does not modify global `/run/lock`.

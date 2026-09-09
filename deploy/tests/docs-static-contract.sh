@@ -9,6 +9,8 @@ pass(){ PASS=$((PASS + 1)); printf 'ok - %s\n' "$1"; }
 fail(){ printf 'not ok - %s\n' "$*" >&2; exit 1; }
 
 docs=("$ROOT/README.md" "$ROOT/deploy/README.md" "$ROOT/docs/configuration.md" "$ROOT/docs/operations.md" "$ROOT/docs/testing.md")
+smoke_examples=$(grep -R -F -- 'sudo /usr/local/libexec/acm/smoke.sh' "${docs[@]}" | wc -l || true)
+[ "$smoke_examples" -gt 0 ] || fail 'no installed smoke examples were found'
 for doc in "${docs[@]}"; do
   while IFS= read -r line; do
     [[ "$line" == *'sudo /usr/local/libexec/acm/smoke.sh'* ]] || continue
@@ -17,8 +19,8 @@ for doc in "${docs[@]}"; do
 done
 pass 'installed smoke examples include the repository argument'
 
-grep -Fq '/run/lock/acm/acm-operation.lock' "$ROOT/deploy/README.md" || fail 'deployment docs omit the current operation lock path'
-if grep -Eq '/run/lock/(acm\.lock|acm-deploy\.lock|acm-db\.lock)' "${docs[@]}"; then
+grep -Fq '/run/acm/acm-operation.lock' "$ROOT/deploy/README.md" || fail 'deployment docs omit the current operation lock path'
+if grep -Eq '/run/lock/acm/acm-operation.lock|/run/lock/(acm\.lock|acm-deploy\.lock|acm-db\.lock)' "${docs[@]}"; then
   fail 'deployment docs mention a retired operation lock path'
 fi
 pass 'deployment docs name only the current operation lock path'

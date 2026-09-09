@@ -39,7 +39,7 @@ fi
 readonly ENV_FILE="${ACM_ENV_FILE:-$REPO_DIR/deploy/.env.production}"
 readonly COMPOSE_FILE="${ACM_COMPOSE_FILE:-$REPO_DIR/compose.production.yml}"
 readonly DOCKER_BIN="${ACM_DOCKER_BIN:-docker}"
-readonly LOCK_PATH="${ACM_DB_LOCK_PATH:-/run/lock/acm/acm-operation.lock}"
+readonly LOCK_PATH="${ACM_DB_LOCK_PATH:-/run/acm/acm-operation.lock}"
 readonly FLOCK_BIN="${ACM_FLOCK_BIN:-flock}"
 readonly DB_NAMES=(db.sqlite db.sqlite-wal db.sqlite-shm)
 
@@ -52,11 +52,11 @@ VERIFIED_MIGRATION_IDENTITY=""
 
 usage() {
   printf '%s\n' "Usage:
-  $0 backup --backup-root PATH [--dry-run]
-  $0 verify --backup-dir PATH
-  $0 restore --backup-dir PATH --yes-restore [--quarantine-root PATH] [--dry-run]
+  $0 [--repository-dir ABSOLUTE_PATH] backup --backup-root PATH [--dry-run]
+  $0 [--repository-dir ABSOLUTE_PATH] verify --backup-dir PATH
+  $0 [--repository-dir ABSOLUTE_PATH] restore --backup-dir PATH --yes-restore [--quarantine-root PATH] [--dry-run]
 
-  $0 metadata --backup-dir PATH
+  $0 [--repository-dir ABSOLUTE_PATH] metadata --backup-dir PATH
 
 Testing overrides require ACM_DB_TEST_MODE=1. --dry-run makes no changes."
 }
@@ -235,11 +235,11 @@ data_dir_from_env_file() {
   [ -e "$ENV_FILE" ] || die "environment file is missing"
   [ -f "$ENV_FILE" ] || die "environment file is not a regular file"
 
-  # Do not source dotenv files: only a literal final assignment is considered.
+  # Do not source dotenv files: only literal ACM_DATA_DIR assignments are considered.
   while IFS= read -r line || [ -n "$line" ]; do
     line=${line%$'\r'}
     case "$line" in
-      ACM_DATA_DIR=*) value=${line#ACM_DATA_DIR=}; found=true;;
+      ACM_DATA_DIR=*) "$found" && die "duplicate ACM_DATA_DIR in environment file"; value=${line#ACM_DATA_DIR=}; found=true;;
     esac
   done < "$ENV_FILE"
   if ! "$found"; then
@@ -272,7 +272,8 @@ validate_repository
 if [ "$TEST_MODE" = 1 ] && [ -n "${ACM_DATA_DIR+x}" ] && [ -n "$ACM_DATA_DIR" ]; then
   readonly DATA_DIR_INPUT="$ACM_DATA_DIR"
 else
-  readonly DATA_DIR_INPUT="$(data_dir_from_env_file)"
+  DATA_DIR_INPUT="$(data_dir_from_env_file)"
+  readonly DATA_DIR_INPUT
 fi
 
 current_data_dir_input() {
@@ -292,7 +293,7 @@ assert_separate() {
 }
 
 filesystem_id() {
-  stat -f '%d' "$1" 2>/dev/null || stat -c '%d' "$1"
+  stat -c '%d' "$1" 2>/dev/null || stat -f '%d' "$1"
 }
 
 acquire_lock() {
@@ -300,9 +301,8 @@ acquire_lock() {
   command -v "$FLOCK_BIN" >/dev/null 2>&1 || die "flock is required for mutating database operations"
   assert_operator_path "$LOCK_PATH"
   lock_dir="$(dirname -- "$LOCK_PATH")"
-  if [ "$TEST_MODE" = 0 ] || [ "$LOCK_PATH" = /run/lock/acm/acm-operation.lock ]; then
+  if [ "$TEST_MODE" = 0 ] || [ "$LOCK_PATH" = /run/acm/acm-operation.lock ]; then
     assert_safe_dir /run
-    assert_safe_dir /run/lock
   fi
   if [ ! -e "$lock_dir" ] && [ ! -L "$lock_dir" ]; then
     (umask 077; mkdir -- "$lock_dir") 2>/dev/null || true

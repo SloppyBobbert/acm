@@ -30,7 +30,7 @@ The existing-file `mode=rw` URL does not create a database. The command creates 
 
 ## Backup and restore
 
-The daily systemd job and manual commands use `/usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)"`; see [deployment](../deploy/README.md#backup-restore-and-rollback) for marker, checksum, quarantine, and recovery behavior. The stable helpers remain available after checkout, allowing rollback to continue when the target lacks toolkit files. Test a restore on a non-production copy before an incident.
+Run manual database commands from a checkout with `/usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)"`. The daily systemd job instead uses the `ACM_REPOSITORY_DIR` recorded in `/etc/acm/bootstrap.conf`; see [deployment](../deploy/README.md#backup-restore-and-rollback) for marker, checksum, quarantine, and recovery behavior. The stable helpers remain available after checkout, allowing rollback to continue when the target lacks toolkit files. Test a restore on a non-production copy before an incident.
 
 If deployment leaves failed or prepared state, inspect it before explicitly using the stable helper's [`acknowledge-state`](../deploy/README.md#deployment-state-recovery) recovery command. The command archives evidence and does not perform an automatic rollback, restore, or restart.
 

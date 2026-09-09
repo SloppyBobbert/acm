@@ -223,7 +223,7 @@ if ((DRY_RUN)); then
   printf '\n+ '
   curl_args=("$CURL_BIN" --fail --silent --show-error --connect-timeout "$CONNECT_TIMEOUT" --max-time "$MAX_TIME")
   if ((LOCAL_RESOLVE)); then
-    curl_args+=(--resolve "${API_DOMAIN}:443:127.0.0.1")
+    curl_args+=(--resolve "${API_DOMAIN}:443:127.0.0.1" --noproxy "$API_DOMAIN")
   fi
   curl_args+=("https://${API_DOMAIN}/healthz")
   printf '%q ' "${curl_args[@]}"
@@ -268,7 +268,7 @@ if ((curl_connect_timeout > curl_max_time)); then
 fi
 curl_args=("$CURL_BIN" --fail --silent --show-error --connect-timeout "$curl_connect_timeout" --max-time "$curl_max_time")
 if ((LOCAL_RESOLVE)); then
-  curl_args+=(--resolve "${API_DOMAIN}:443:127.0.0.1")
+  curl_args+=(--resolve "${API_DOMAIN}:443:127.0.0.1" --noproxy "$API_DOMAIN")
 fi
 curl_args+=("https://${API_DOMAIN}/healthz")
 
