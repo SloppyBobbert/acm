@@ -19,7 +19,8 @@ export const ProblemIDContext = createContext<number | undefined>(undefined);
 
 type ProblemViewProps = {
     id?: number,
-    competitionId?: number
+    competitionId?: number,
+    hideEditorScrollbars?: boolean,
 };
 
 type Problem = {
@@ -30,7 +31,7 @@ type Problem = {
     competition_id?: number;
 };
 
-export default function ProblemView({ id }: ProblemViewProps): JSX.Element {
+export default function ProblemView({ id, hideEditorScrollbars }: ProblemViewProps): JSX.Element {
     const { data, error } = useSWR<Problem>(
         id ? api_url(`/problems/${id}`) : null,
         fetcher
@@ -52,6 +53,7 @@ export default function ProblemView({ id }: ProblemViewProps): JSX.Element {
                 <Editor
                     language="cpp"
                     value={content}
+                    hideScrollbars={hideEditorScrollbars}
                     onChange={(text, _event) => {
                         if (id) setProblemImpl(id, text);
                     }}

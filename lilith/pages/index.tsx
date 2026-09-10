@@ -50,7 +50,7 @@ function FeaturedProblemView(): JSX.Element {
         );
     }
 
-    return <ProblemView id={featuredProblem.id} />;
+    return <ProblemView id={featuredProblem.id} hideEditorScrollbars />;
 }
 
 const Home: NextPage = () => {
