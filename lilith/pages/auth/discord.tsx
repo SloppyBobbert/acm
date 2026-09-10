@@ -56,17 +56,13 @@ const DiscordAuth: NextPage = () => {
       return;
     }
 
-    const controller = new AbortController();
-    let cancelled = false;
-
+    // The code and state are both single use, so the exchange must survive an
+    // effect teardown rather than being aborted and retried.
     const exchange = async () => {
       try {
-        if (cancelled) return;
-
         const response = await fetch(api_url("/auth/discord"), {
           method: "POST",
           credentials: "include",
-          signal: controller.signal,
           headers: {
             "Content-Type": "application/json",
           },
@@ -80,23 +76,13 @@ const DiscordAuth: NextPage = () => {
           throw new Error("Discord sign-in failed");
         }
 
-        if (!cancelled) {
-          router.replace("/");
-        }
+        router.replace("/");
       } catch {
-        if (!cancelled) {
-          setFailed(true);
-        }
+        setFailed(true);
       }
     };
 
-    void Promise.resolve().then(exchange);
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      exchanged.current = false;
-    };
+    void exchange();
   }, [router]);
 
   if (failed) {
