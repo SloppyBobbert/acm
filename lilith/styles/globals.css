@@ -64,4 +64,17 @@
   .badge-star {
     @apply flex h-9 items-center self-center rounded-full bg-yellow-300 px-4 text-yellow-800;
   }
+
+  .featured-problem-container {
+    @apply h-full min-h-0 overflow-hidden;
+  }
+
+  .featured-problem-container * {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .featured-problem-container *::-webkit-scrollbar {
+    display: none;
+  }
 }

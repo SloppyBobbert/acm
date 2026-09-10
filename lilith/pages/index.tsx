@@ -62,9 +62,9 @@ const Home: NextPage = () => {
 
             <Navbar />
 
-            <main className="flex flex-1 flex-col">
-                <div className="w-full pt-4">
-                    <div className="mx-auto w-full border-y border-neutral-300 dark:border-neutral-700 md:container md:h-[80vh] md:rounded md:border md:shadow">
+            <main className="flex min-h-0 flex-1 flex-col">
+                <div className="w-full flex-1 pt-4 min-h-0">
+                    <div className="featured-problem-container mx-auto w-full border-y border-neutral-300 dark:border-neutral-700 md:container md:h-[80vh] md:rounded md:border md:shadow">
                         <FeaturedProblemView />
                     </div>
                 </div>
