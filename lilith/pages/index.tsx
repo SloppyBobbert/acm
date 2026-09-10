@@ -4,7 +4,6 @@ import useSWR from "swr";
 import ErrorBox from "../components/error-box";
 import Navbar from "../components/navbar";
 import ProblemView from "../components/problem";
-import { CompetitionGrid } from "./competitions";
 import { api_url, fetcher } from "../utils/fetcher";
 
 type FeaturedProblem = {
@@ -68,13 +67,10 @@ const Home: NextPage = () => {
                     Chico ACM
                 </h1>
 
-                <div className="w-full mx-auto md:container">
-                    <h2 className="mx-2 text-xl font-bold md:mx-0">Local Competitions</h2>
-                    <CompetitionGrid />
-                </div>
-
-                <div className="mx-auto w-full overflow-auto border-y border-neutral-300 dark:border-neutral-700 md:container md:h-[80vh] md:rounded md:border md:shadow">
-                    <FeaturedProblemView />
+                <div className="w-full pt-4">
+                    <div className="mx-auto w-full border-y border-neutral-300 dark:border-neutral-700 md:container md:h-[80vh] md:rounded md:border md:shadow">
+                        <FeaturedProblemView />
+                    </div>
                 </div>
             </main>
 
