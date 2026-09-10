@@ -33,11 +33,19 @@ function component(file, extra = '') {
   const swr = key => { h.keys.push(key); return { data: user }; };
   swr.useSWRConfig = () => ({ mutate: key => { h.mutations.push(key); return Promise.resolve(); } });
   h.response = { ok: true, json: async () => ({}) };
+  h.requests = [];
   const context = {
-    exports: {}, Map, Date, console,
+    exports: {}, Map, Date, console, URL, URLSearchParams,
+    window: {
+      location: { search: '?code=review-code&state=review-state', href: 'http://localhost/auth/discord?code=review-code&state=review-state' },
+      history: { state: {}, replaceState() {} },
+    },
     process: { env: { NEXT_PUBLIC_WS_URL: 'ws://review.invalid/ws' } },
     setInterval: () => 1, clearInterval() {},
-    fetch: () => h.networkError ? Promise.reject(h.networkError) : Promise.resolve(h.response),
+    fetch: (...args) => {
+      h.requests.push(args);
+      return h.networkError ? Promise.reject(h.networkError) : Promise.resolve(h.response);
+    },
     WebSocket: class {
       constructor() { this.listeners = {}; h.sockets.push(this); }
       addEventListener(name, callback) { this.listeners[name] = callback; }
@@ -73,6 +81,30 @@ function find(tree, predicate) {
     return undefined;
   }
   return predicate(tree) ? tree : find(tree.props?.children, predicate);
+}
+
+for (const lifecycle of ['unmounted', 'strict-replay']) {
+  for (const outcome of ['success', 'http-error', 'network-error']) {
+    test(`Discord ${outcome} after ${lifecycle} preserves single-use exchange`, async () => {
+      const h = component('pages/auth/discord.tsx');
+      let resolve, reject;
+      h.response = new Promise((done, fail) => { resolve = done; reject = fail; });
+      h.render();
+      const cleanups = h.effects.map(effect => effect());
+      cleanups.forEach(cleanup => cleanup?.());
+      if (lifecycle === 'strict-replay') h.effects.forEach(effect => effect());
+      const before = h.updates;
+      if (outcome === 'network-error') reject(new Error('offline'));
+      else resolve({ ok: outcome === 'success' });
+      await flush();
+      assert.equal(h.requests.length, 1);
+      assert.equal(h.requests[0][0], 'api:/auth/discord');
+      assert.equal(h.requests[0][1].signal, undefined);
+      const active = lifecycle === 'strict-replay';
+      assert.deepEqual(h.routes, active && outcome === 'success' ? ['/'] : []);
+      assert.equal(h.updates - before, active && outcome !== 'success' ? 1 : 0);
+    });
+  }
 }
 
 const profile = () => component('pages/user/[username].tsx', '\nexports.UserEditor = UserEditor;');

@@ -7,6 +7,7 @@ import { api_url } from "../../utils/fetcher";
 const DiscordAuth: NextPage = () => {
   const router = useRouter();
   const exchanged = useRef(false);
+  const active = useRef(false);
   const callback = useRef<{
     code: string | null;
     state: string | null;
@@ -14,6 +15,13 @@ const DiscordAuth: NextPage = () => {
     hasCallbackParameters: boolean;
   }>();
   const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!callback.current) {
@@ -76,9 +84,9 @@ const DiscordAuth: NextPage = () => {
           throw new Error("Discord sign-in failed");
         }
 
-        router.replace("/");
+        if (active.current) router.replace("/");
       } catch {
-        setFailed(true);
+        if (active.current) setFailed(true);
       }
     };
 
