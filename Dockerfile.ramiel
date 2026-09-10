@@ -1,17 +1,17 @@
 ARG ACM_DOCKER_PLATFORM=linux/amd64
 
-FROM --platform=$ACM_DOCKER_PLATFORM rust:1.92-bullseye AS builder
+FROM --platform=$ACM_DOCKER_PLATFORM rust:1.92-bookworm AS builder
 ARG TARGETARCH
 WORKDIR /app
 
 COPY . .
 RUN --mount=type=cache,id=cargo-registry-rust-1.92-${TARGETARCH},target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cargo-git-rust-1.92-${TARGETARCH},target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=acm-target-rust-1.92-${TARGETARCH},target=/app/target,sharing=locked \
+    --mount=type=cache,id=acm-target-rust-1.92-bookworm-${TARGETARCH},target=/app/target,sharing=locked \
     cargo build --release --locked --package ramiel && \
     cp /app/target/release/ramiel /tmp/ramiel
 
-FROM --platform=$ACM_DOCKER_PLATFORM debian:bullseye-slim
+FROM --platform=$ACM_DOCKER_PLATFORM debian:bookworm-slim
 WORKDIR /
 
 RUN apt-get update && \
