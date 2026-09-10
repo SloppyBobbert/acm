@@ -1,18 +1,18 @@
 ARG ACM_DOCKER_PLATFORM=linux/amd64
 
-FROM --platform=$ACM_DOCKER_PLATFORM rust:1.92-bullseye AS builder
+FROM --platform=$ACM_DOCKER_PLATFORM rust:1.92-bookworm AS builder
 ARG TARGETARCH
 WORKDIR /app
 
 COPY . .
 RUN --mount=type=cache,id=cargo-registry-rust-1.92-${TARGETARCH},target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=cargo-git-rust-1.92-${TARGETARCH},target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=acm-target-rust-1.92-${TARGETARCH},target=/app/target,sharing=locked \
+    --mount=type=cache,id=acm-target-rust-1.92-bookworm-${TARGETARCH},target=/app/target,sharing=locked \
     cargo build --release --locked --package server --bin server --bin bootstrap-admin && \
     cp /app/target/release/server /tmp/server && \
     cp /app/target/release/bootstrap-admin /tmp/bootstrap-admin
 
-FROM --platform=$ACM_DOCKER_PLATFORM debian:bullseye-slim AS runtime
+FROM --platform=$ACM_DOCKER_PLATFORM debian:bookworm-slim AS runtime
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends openssl ca-certificates curl && \
