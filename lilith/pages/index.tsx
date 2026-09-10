@@ -63,7 +63,7 @@ const Home: NextPage = () => {
 
             <Navbar />
 
-            <main className="flex flex-col gap-4">
+            <main className="flex flex-1 flex-col gap-4">
                 <h1 className="bg-gradient-to-b from-neutral-600 to-neutral-900 bg-clip-text py-4 text-center text-6xl font-extrabold text-transparent drop-shadow-md dark:from-neutral-50 dark:to-neutral-400">
                     Chico ACM
                 </h1>
