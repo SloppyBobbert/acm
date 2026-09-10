@@ -259,7 +259,7 @@ validate_repository() {
   require_root_owned_safe_file "$repository_dir/compose.production.yml"
   git -C "$repository_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "ACM_REPOSITORY_DIR is not a Git checkout"
   while IFS= read -r -d '' tracked; do
-    [[ "$tracked" != /* && "$tracked" != *'..'* ]] || fail "unsafe tracked repository path: $tracked"
+    [[ "$tracked" != /* && "$tracked" != ".." && "$tracked" != ../* && "$tracked" != */../* && "$tracked" != */.. ]] || fail "unsafe tracked repository path: $tracked"
     absolute="$repository_dir/$tracked"
     assert_trusted_path_components "tracked repository content" "$absolute" 0
     [ -f "$absolute" ] && [ ! -L "$absolute" ] || fail "tracked repository content is not a regular non-symlink file: $absolute"
