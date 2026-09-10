@@ -7,3 +7,61 @@
     @apply bg-neutral-50 text-neutral-800 dark:bg-neutral-900 dark:text-neutral-300;
   }
 }
+
+@layer components {
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 dark:focus-visible:ring-blue-400 dark:focus-visible:ring-offset-neutral-900;
+  }
+
+  .page-shell {
+    @apply flex min-h-screen flex-col;
+  }
+
+  .page-main {
+    @apply mx-auto w-full max-w-page flex-1 py-page;
+  }
+
+  .page-heading {
+    @apply text-3xl font-extrabold text-neutral-900 dark:text-neutral-50;
+  }
+
+  .surface-card {
+    @apply overflow-hidden border-y border-neutral-300 bg-white dark:border-neutral-700 dark:bg-black sm:rounded-md sm:border;
+  }
+
+  .surface-list-item {
+    @apply border-b border-neutral-300 last:border-b-0 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800;
+  }
+
+  .nav-link {
+    @apply focus-ring rounded-sm self-start text-lg font-bold transition-colors ease-in-out hover:text-neutral-600 dark:hover:text-neutral-400 md:self-center;
+  }
+
+  .nav-link[aria-current="page"] {
+    @apply underline decoration-2 underline-offset-4;
+  }
+
+  .input-field {
+    @apply rounded border border-neutral-300 bg-neutral-50 p-2 outline-none ring-neutral-300 transition-shadow focus:ring dark:border-neutral-700 dark:bg-neutral-900 dark:ring-neutral-700;
+  }
+
+  .btn-primary {
+    @apply focus-ring rounded-full bg-blue-700 px-4 py-2 text-sm font-bold text-blue-50 transition-colors hover:bg-blue-500;
+  }
+
+  .btn-secondary {
+    @apply focus-ring rounded-full bg-neutral-200 px-6 py-3 transition-colors hover:bg-neutral-300 dark:bg-neutral-800 dark:hover:bg-neutral-700;
+  }
+
+  .btn-success {
+    @apply focus-ring rounded bg-green-500 py-2 text-center outline outline-green-400 transition-colors hover:bg-green-600;
+  }
+
+  .btn-discord {
+    @apply focus-ring rounded bg-discord px-4 py-1 text-lg font-bold text-white transition-colors hover:bg-discord-hover hover:text-white;
+  }
+
+  .badge-star {
+    @apply flex h-9 items-center self-center rounded-full bg-yellow-300 px-4 text-yellow-800;
+  }
+}

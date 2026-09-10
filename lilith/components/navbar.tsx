@@ -6,24 +6,15 @@ import { api_url, fetcher } from "../utils/fetcher";
 import { User } from "../utils/state";
 
 type NavbarLinkProps = {
-  className?: string;
   href: string;
   children: React.ReactNode;
-  onClick?: React.MouseEventHandler<HTMLAnchorElement>;
+  current?: boolean;
 };
 
-function NavbarLink({
-  className,
-  href,
-  children,
-  onClick,
-}: NavbarLinkProps): JSX.Element {
-  const defaultStyles =
-    "font-bold text-lg self-start md:self-center hover:text-neutral-600 dark:hover:text-neutral-400 transition-colors ease-in-out md:block";
-
+function NavbarLink({ href, children, current }: NavbarLinkProps): JSX.Element {
   return (
     <Link href={href}>
-      <a onClick={onClick} className={className + " " + defaultStyles}>
+      <a className="nav-link" aria-current={current ? "page" : undefined}>
         {children}
       </a>
     </Link>
@@ -31,109 +22,146 @@ function NavbarLink({
 }
 
 export default function Navbar(): JSX.Element {
-  const [hiddenStyle, setHiddenStyle] = useState("hidden");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [isComponentMounted, setIsComponentMounted] = useState(false);
   const router = useRouter();
   const { mutate } = useSWRConfig();
 
-  const { data: user, error } = useSWR<User>(
-    api_url("/user/me"),
-    fetcher, {
+  const { data: user, error } = useSWR<User>(api_url("/user/me"), fetcher, {
     shouldRetryOnError: false,
   });
 
   useEffect(() => setIsComponentMounted(true), []);
 
-  function handleClick() {
-    if (hiddenStyle === "") {
-      setHiddenStyle("hidden");
-    } else {
-      setHiddenStyle("");
-    }
-  }
+  useEffect(() => {
+    const close = () => setMenuOpen(false);
+    router.events.on("routeChangeComplete", close);
+    return () => {
+      router.events.off("routeChangeComplete", close);
+    };
+  }, [router]);
 
-  let sidebar = undefined;
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
 
   const oauth_url = api_url("/auth/discord/start");
+  const path = router.asPath.split("?")[0];
+
+  let sidebar: JSX.Element | undefined;
 
   if (isComponentMounted) {
     if (!user || error) {
       sidebar = (
-        <>
-          <NavbarLink
-            className={`md:ml-auto bg-[#5865F2] text-white hover:text-white px-4 py-1 rounded hover:bg-[#6f7af2] ${hiddenStyle}`}
-            href={oauth_url}>
+        <li className="md:ml-auto">
+          <a className="btn-discord" href={oauth_url}>
             Log in with Discord
-          </NavbarLink>
-        </>
+          </a>
+        </li>
       );
     } else {
       sidebar = (
         <>
-          <NavbarLink
-            className={`md:ml-auto ${hiddenStyle}`}
-            href={`/user/${user.username}`}
-          >
-            {"Account"}
-          </NavbarLink>
-          <NavbarLink
-            className={hiddenStyle}
-            href="#"
-            onClick={(event) => {
-              event.preventDefault();
-
-              fetch(api_url("/auth/logout"), {
-                method: "GET",
-                credentials: "include"
-              }).then(() => {
-                mutate(api_url("/user/me"));
-                router.push("/");
-              });
-            }}
-          >
-            Sign out
-          </NavbarLink>
+          <li className="md:ml-auto">
+            <NavbarLink
+              href={`/user/${user.username}`}
+              current={path === `/user/${user.username}`}
+            >
+              Account
+            </NavbarLink>
+          </li>
+          <li>
+            <button
+              type="button"
+              className="nav-link"
+              onClick={() => {
+                fetch(api_url("/auth/logout"), {
+                  method: "GET",
+                  credentials: "include",
+                }).then(() => {
+                  mutate(api_url("/user/me"));
+                  router.push("/");
+                });
+              }}
+            >
+              Sign out
+            </button>
+          </li>
         </>
       );
     }
   }
 
   return (
-    <div className="sticky top-0 z-50 w-full">
-      <div className="p-4 flex flex-col gap-4 md:flex-row bg-white/90 dark:bg-black/90 backdrop-blur-lg border-neutral-300 dark:border-neutral-700 border-b">
-        <div className="flex">
+    <header className="sticky top-0 z-50 w-full">
+      <nav
+        aria-label="Primary"
+        className="flex flex-col gap-4 border-b border-neutral-300 bg-white/90 p-4 backdrop-blur-lg dark:border-neutral-700 dark:bg-black/90 md:flex-row md:items-center"
+      >
+        <div className="flex items-center">
           <Link href="/">
-            <a className="font-extrabold text-2xl hover:text-neutral-600 transition-colors ease-in-out flex items-center dark:hover:text-neutral-400">
+            <a className="nav-link flex items-center text-2xl font-extrabold">
               Chico ACM
             </a>
           </Link>
 
           <button
-            onClick={handleClick}
-            className="md:hidden ml-auto rounded-full p-2 px-5 bg-blue-700 text-blue-50 hover:bg-blue-500 transition-colors"
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            className="btn-primary ml-auto md:hidden"
+            aria-expanded={menuOpen}
+            aria-controls="primary-navigation"
           >
             Menu
           </button>
         </div>
 
-        <NavbarLink className={hiddenStyle} href="/problems">
-          Problems
-        </NavbarLink>
-
-        <NavbarLink className={hiddenStyle} href="/leaderboard">
-          Leaderboard
-        </NavbarLink>
-
-        <NavbarLink className={hiddenStyle} href="/competitions">
-          Competitions
-        </NavbarLink>
-
-        {(user && (user.auth == "OFFICER" || user.auth == "ADMIN")) && <NavbarLink className={hiddenStyle} href="/dashboard">
-          Dashboard
-        </NavbarLink>}
-
-        {sidebar}
-      </div>
-    </div>
+        <ul
+          id="primary-navigation"
+          className={`${
+            menuOpen ? "flex" : "hidden md:flex"
+          } flex-col gap-4 md:flex-row md:items-center md:flex-1`}
+        >
+          <li>
+            <NavbarLink href="/problems" current={path.startsWith("/problems")}>
+              Problems
+            </NavbarLink>
+          </li>
+          <li>
+            <NavbarLink href="/leaderboard" current={path === "/leaderboard"}>
+              Leaderboard
+            </NavbarLink>
+          </li>
+          <li>
+            <NavbarLink
+              href="/competitions"
+              current={path.startsWith("/competitions")}
+            >
+              Competitions
+            </NavbarLink>
+          </li>
+          {isComponentMounted &&
+            user &&
+            (user.auth == "OFFICER" || user.auth == "ADMIN") && (
+              <li>
+                <NavbarLink
+                  href="/dashboard"
+                  current={path.startsWith("/dashboard")}
+                >
+                  Dashboard
+                </NavbarLink>
+              </li>
+            )}
+          {sidebar}
+        </ul>
+      </nav>
+    </header>
   );
 }

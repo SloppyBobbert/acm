@@ -4,10 +4,13 @@ type ErrorBoxProps = {
 
 export default function ErrorBox({ children }: ErrorBoxProps): JSX.Element {
     return (
-        <div className="bg-red-500 text-red-50 p-4 my-4 flex flex-col gap-2 rounded-md border-red-600 dark:border-red-500 dark:bg-red-700 border">
-            <h1 className="text-2xl font-bold">Error</h1>
+        <div
+            role="alert"
+            className="my-4 flex flex-col gap-2 rounded-md border border-red-600 bg-red-500 p-4 text-red-50 dark:border-red-500 dark:bg-red-700"
+        >
+            <p className="text-2xl font-bold">Error</p>
 
-            <pre className="bg-red-700 dark:bg-red-800 overflow-auto p-2 rounded">
+            <pre className="overflow-auto rounded bg-red-700 p-2 dark:bg-red-800">
                 <code>{children}</code>
             </pre>
         </div>
