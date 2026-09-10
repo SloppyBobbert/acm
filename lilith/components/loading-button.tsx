@@ -3,6 +3,7 @@ import { useTransition, animated, useSpring } from "@react-spring/web";
 type LoadingButtonProps = {
   className?: string;
   loading?: boolean;
+  type?: "button" | "submit";
   onClick?: () => void;
   children: React.ReactNode;
 };
@@ -10,6 +11,7 @@ type LoadingButtonProps = {
 export default function LoadingButton({
   className,
   loading,
+  type = "button",
   onClick,
   children,
 }: LoadingButtonProps): JSX.Element {
@@ -34,21 +36,28 @@ export default function LoadingButton({
   });
 
   return (
-    <button onClick={() => {
-      if (!loading && onClick) {
-        onClick();
-      }
-    }} className={className}>
+    <button
+      type={type}
+      disabled={!!loading}
+      aria-busy={loading}
+      onClick={() => {
+        if (!loading && onClick) {
+          onClick();
+        }
+      }}
+      className={`focus-ring disabled:cursor-wait ${className ?? ""}`}
+    >
       <div className="relative">
         {spinnerStyles(
           (styles, item) =>
             item && (
               <animated.svg
                 style={styles}
-                className="absolute animate-spin h-5 w-5 text-white"
+                className="absolute h-5 w-5 animate-spin"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
+                aria-hidden="true"
               >
                 <circle
                   className="opacity-25"
@@ -69,7 +78,7 @@ export default function LoadingButton({
 
         <animated.span
           style={contentStyles}
-          className="h-5 flex items-center justify-center"
+          className="flex h-5 items-center justify-center"
         >
           {children}
         </animated.span>

@@ -12,6 +12,7 @@ type EditorProps = {
         event: monaco.editor.IModelContentChangedEvent
     ) => void;
     className?: string;
+    hideScrollbars?: boolean;
     value: string;
 };
 
@@ -20,6 +21,7 @@ export default function Editor({
     value,
     language,
     className,
+    hideScrollbars,
 }: EditorProps): JSX.Element {
     const [editor, setEditor] = useState<
         monaco.editor.IStandaloneCodeEditor | undefined
@@ -65,11 +67,19 @@ export default function Editor({
             theme,
             value: valueRef.current,
             cursorSmoothCaretAnimation: true,
-            extraEditorClassName: `h-full ${className}`,
+            extraEditorClassName: `h-full ${className ?? ""}`,
             automaticLayout: true,
             minimap: {
                 enabled: false,
             },
+            scrollbar: hideScrollbars
+                ? {
+                    vertical: "hidden",
+                    horizontal: "hidden",
+                    verticalScrollbarSize: 0,
+                    horizontalScrollbarSize: 0,
+                }
+                : undefined,
         });
 
         setEditor(editor);
@@ -97,7 +107,7 @@ export default function Editor({
                 subscription.dispose();
             }
         };
-    }, [vimEnabled, editorFontSize, language, theme, className]);
+    }, [vimEnabled, editorFontSize, hideScrollbars, language, theme, className]);
 
     return (
         <div className="h-full grid grid-rows-full-min grid-cols-full">

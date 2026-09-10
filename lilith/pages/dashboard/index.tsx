@@ -3,6 +3,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
+import ErrorBox from "../../components/error-box";
 import Navbar from "../../components/navbar";
 import { api_url, fetcher } from "../../utils/fetcher";
 import { Submission, User } from "../../utils/state";
@@ -15,7 +16,7 @@ function Completion({ completion }: { completion: Submission }): JSX.Element {
 
     return (
         <Link href={`/submissions/${completion.id}`}>
-            <a className="p-2 border-b last:border-b-0 border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-600 transition-colors flex flex-col">
+            <a className="focus-ring flex flex-col border-b border-neutral-300 p-2 last:border-b-0 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-600">
                 <span className="font-extrabold">Problem {completion.problem_id}</span>
 
                 {user && <span>{user.username}</span>}
@@ -33,7 +34,7 @@ function JobElement({ job }: { job: Job }): JSX.Element {
     const animate = job.queue_position ? "animate-pulse" : "";
 
     return (
-        <div className={`p-2 border-b last:border-b-0 border-neutral-300 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-600 transition-colors flex flex-col ${animate}`}>
+        <div className={`flex flex-col border-b border-neutral-300 p-2 last:border-b-0 transition-colors hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-600 ${animate}`}>
             <span className="font-extrabold">Problem {job.problem_id}</span>
 
             <div className="grid grid-cols-2">
@@ -54,31 +55,53 @@ function JobElement({ job }: { job: Job }): JSX.Element {
     );
 }
 
+function EmptyColumn({ children }: { children: string }): JSX.Element {
+    return (
+        <p className="rounded-xl border border-dashed border-neutral-300 bg-white p-4 text-sm text-neutral-500 dark:border-neutral-700 dark:bg-black dark:text-neutral-400">
+            {children}
+        </p>
+    );
+}
+
+function LoadingColumn(): JSX.Element {
+    return (
+        <div
+            className="h-24 animate-pulse rounded-xl border border-neutral-300 bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-800"
+            aria-hidden="true"
+        />
+    );
+}
+
 function CompletionsList({ completions }: { completions: Submission[] }): JSX.Element {
-    if (completions.length == 0) return <></>;
+    if (completions.length == 0) {
+        return <EmptyColumn>No completions yet.</EmptyColumn>;
+    }
 
     return (
-        <div className="rounded-xl border-neutral-300 bg-white dark:bg-black dark:border-neutral-700 border flex flex-col overflow-hidden">
-            {completions.map((completion, i) =>
-                <Completion key={i} completion={completion} />
+        <div className="flex flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white dark:border-neutral-700 dark:bg-black">
+            {completions.map((completion) =>
+                <Completion key={completion.id} completion={completion} />
             )}
         </div>
     );
 }
 
 function JobsList({ jobs }: { jobs: Job[] }): JSX.Element {
-    if (jobs.length == 0) return <></>;
+    if (jobs.length == 0) {
+        return <EmptyColumn>No jobs yet.</EmptyColumn>;
+    }
 
     return (
-        <div className="rounded-xl border-neutral-300 bg-white dark:bg-black dark:border-neutral-700 border flex flex-col overflow-hidden">
+        <div className="flex flex-col overflow-hidden rounded-xl border border-neutral-300 bg-white dark:border-neutral-700 dark:bg-black">
             {jobs.map((job, i) =>
-                <JobElement key={i} job={job} />
+                <JobElement key={job.id ?? i} job={job} />
             )}
         </div>
     );
 }
 
 type Job = {
+    id?: number;
     job_type: "CustomInput" | "SubmitJob";
     problem_id: number,
     user_id: number,
@@ -112,9 +135,21 @@ const DashboardPage: NextPage = () => {
     const [completions, setCompletions] = useState<Submission[]>([]);
     const [pendingJobs, setPendingJobs] = useState<Map<number, Job>>(new Map);
     const [finishedJobs, setFinishedJobs] = useState<Job[]>([]);
+    const [connection, setConnection] = useState<"connecting" | "open" | "closed">("connecting");
 
     useEffect(() => {
+        let cancelled = false;
         const client = new WebSocket(process.env.NEXT_PUBLIC_WS_URL!);
+
+        client.addEventListener("open", () => {
+            if (!cancelled) setConnection("open");
+        });
+        client.addEventListener("error", () => {
+            if (!cancelled) setConnection("closed");
+        });
+        client.addEventListener("close", () => {
+            if (!cancelled) setConnection("closed");
+        });
 
         client.addEventListener('message', (event) => {
             let parsed: unknown;
@@ -131,6 +166,7 @@ const DashboardPage: NextPage = () => {
 
             if ("NewJob" in data) {
                 const newJob: Job = {
+                    id: data.NewJob.id,
                     job_type: data.NewJob.job_type,
                     problem_id: data.NewJob.problem_id,
                     user_id: data.NewJob.user_id,
@@ -142,6 +178,7 @@ const DashboardPage: NextPage = () => {
                 );
             } else if ("FinishedJob" in data) {
                 const newJob: Job = {
+                    id: data.FinishedJob.id,
                     job_type: data.FinishedJob.job_type,
                     problem_id: data.FinishedJob.problem_id,
                     user_id: data.FinishedJob.user_id,
@@ -159,35 +196,51 @@ const DashboardPage: NextPage = () => {
         });
 
         return () => {
+            cancelled = true;
             client.close();
         };
     }, []);
 
+    const showLists = connection !== "connecting";
+
     return (
-        <div>
+        <div className="page-shell">
             <Navbar />
 
             <Head>
                 <title>Admin Dashboard</title>
             </Head>
 
-            <div className="grid grid-cols-3 gap-4 p-4">
-                <div className="flex flex-col gap-4">
-                    <h1 className="font-extrabold text-2xl">Pending Jobs</h1>
+            <main className="flex-1 p-4">
+                <h1 className="page-heading mb-4">Dashboard</h1>
 
-                    <JobsList jobs={Array.from(pendingJobs.values())} />
-                </div>
-                <div className="flex flex-col gap-4">
-                    <h1 className="font-extrabold text-2xl">Finished Jobs</h1>
+                {connection === "connecting" && (
+                    <p className="mb-4 text-sm text-neutral-500" aria-busy="true">
+                        Connecting to live updates…
+                    </p>
+                )}
 
-                    <JobsList jobs={finishedJobs} />
-                </div>
-                <div className="flex flex-col gap-4">
-                    <h1 className="font-extrabold text-2xl">Completions</h1>
+                {connection === "closed" && (
+                    <ErrorBox>
+                        Could not connect to the live dashboard. Check that the API is running.
+                    </ErrorBox>
+                )}
 
-                    <CompletionsList completions={completions} />
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <section className="flex flex-col gap-4">
+                        <h2 className="text-2xl font-extrabold">Pending Jobs</h2>
+                        {showLists ? <JobsList jobs={Array.from(pendingJobs.values())} /> : <LoadingColumn />}
+                    </section>
+                    <section className="flex flex-col gap-4">
+                        <h2 className="text-2xl font-extrabold">Finished Jobs</h2>
+                        {showLists ? <JobsList jobs={finishedJobs} /> : <LoadingColumn />}
+                    </section>
+                    <section className="flex flex-col gap-4">
+                        <h2 className="text-2xl font-extrabold">Completions</h2>
+                        {showLists ? <CompletionsList completions={completions} /> : <LoadingColumn />}
+                    </section>
                 </div>
-            </div>
+            </main>
 
         </div>
     );
