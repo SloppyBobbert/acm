@@ -12,7 +12,6 @@ import LoadingButton from "../../components/loading-button";
 import Head from "next/head";
 import SourceCodeBlock from "../../components/source-code";
 import ErrorBox from "../../components/error-box";
-import Footer from "../../components/footer";
 
 export function SubmissionTime({ time }: { time: string }): JSX.Element {
   let dateTime = new Date(time);
@@ -355,7 +354,6 @@ const UserPage: NextPage = () => {
         )}
       </main>
 
-      <Footer />
     </div>
   );
 };

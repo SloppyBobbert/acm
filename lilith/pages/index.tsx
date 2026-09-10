@@ -2,7 +2,6 @@ import type { NextPage } from "next";
 import Head from "next/head";
 import useSWR from "swr";
 import ErrorBox from "../components/error-box";
-import Footer from "../components/footer";
 import Navbar from "../components/navbar";
 import ProblemView from "../components/problem";
 import { CompetitionGrid } from "./competitions";
@@ -79,7 +78,6 @@ const Home: NextPage = () => {
                 </div>
             </main>
 
-            <Footer />
         </div>
     );
 };

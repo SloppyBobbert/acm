@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
 import ErrorBox from "../../components/error-box";
-import Footer from "../../components/footer";
 import Navbar from "../../components/navbar";
 import { api_url, fetcher } from "../../utils/fetcher";
 import { Submission, User } from "../../utils/state";
@@ -243,7 +242,6 @@ const DashboardPage: NextPage = () => {
                 </div>
             </main>
 
-            <Footer />
         </div>
     );
 };

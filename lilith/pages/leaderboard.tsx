@@ -3,7 +3,6 @@ import Head from "next/head";
 import Link from "next/link";
 import useSWR from "swr";
 import ErrorBox from "../components/error-box";
-import Footer from "../components/footer";
 import Navbar from "../components/navbar";
 import { api_url, fetcher } from "../utils/fetcher";
 
@@ -99,7 +98,6 @@ const Leaderboard: NextPage = () => {
         )}
       </main>
 
-      <Footer />
     </div>
   );
 };
