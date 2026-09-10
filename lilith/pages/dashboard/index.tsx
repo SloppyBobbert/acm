@@ -152,6 +152,7 @@ const DashboardPage: NextPage = () => {
         });
 
         client.addEventListener('message', (event) => {
+            if (cancelled) return;
             let parsed: unknown;
 
             try {
@@ -174,7 +175,7 @@ const DashboardPage: NextPage = () => {
                 };
 
                 setPendingJobs(oldJobs =>
-                    new Map(oldJobs.set(data.NewJob.id, newJob))
+                    new Map(oldJobs).set(data.NewJob.id, newJob)
                 );
             } else if ("FinishedJob" in data) {
                 const newJob: Job = {
@@ -185,8 +186,9 @@ const DashboardPage: NextPage = () => {
                 };
 
                 setPendingJobs(oldJobs => {
-                    oldJobs.delete(data.FinishedJob.id);
-                    return new Map(oldJobs);
+                    const nextJobs = new Map(oldJobs);
+                    nextJobs.delete(data.FinishedJob.id);
+                    return nextJobs;
                 });
                 setFinishedJobs(oldJobs => [newJob, ...oldJobs]);
 
@@ -226,7 +228,7 @@ const DashboardPage: NextPage = () => {
                     </ErrorBox>
                 )}
 
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                {connection !== "closed" && <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                     <section className="flex flex-col gap-4">
                         <h2 className="text-2xl font-extrabold">Pending Jobs</h2>
                         {showLists ? <JobsList jobs={Array.from(pendingJobs.values())} /> : <LoadingColumn />}
@@ -239,7 +241,7 @@ const DashboardPage: NextPage = () => {
                         <h2 className="text-2xl font-extrabold">Completions</h2>
                         {showLists ? <CompletionsList completions={completions} /> : <LoadingColumn />}
                     </section>
-                </div>
+                </div>}
             </main>
 
         </div>

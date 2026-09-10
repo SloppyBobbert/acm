@@ -70,15 +70,6 @@
   }
 }
 
-.featured-problem-container * {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.featured-problem-container *::-webkit-scrollbar {
-  display: none;
-}
-
 .featured-problem-container .monaco-scrollable-element > .scrollbar {
   display: none !important;
 }

@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { api_url, fetcher } from "../utils/fetcher";
-import { User } from "../utils/state";
+import { User, useSession } from "../utils/state";
 
 type NavbarLinkProps = {
   href: string;
@@ -26,6 +26,7 @@ export default function Navbar(): JSX.Element {
   const [isComponentMounted, setIsComponentMounted] = useState(false);
   const router = useRouter();
   const { mutate } = useSWRConfig();
+  const setError = useSession((state) => state.setError);
 
   const { data: user, error } = useSWR<User>(api_url("/user/me"), fetcher, {
     shouldRetryOnError: false,
@@ -85,9 +86,15 @@ export default function Navbar(): JSX.Element {
                 fetch(api_url("/auth/logout"), {
                   method: "GET",
                   credentials: "include",
-                }).then(() => {
+                }).then((response) => {
+                  if (!response.ok) {
+                    setError("Could not sign out", true);
+                    return;
+                  }
                   mutate(api_url("/user/me"));
                   router.push("/");
+                }).catch(() => {
+                  setError("Could not sign out", true);
                 });
               }}
             >

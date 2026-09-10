@@ -230,10 +230,15 @@ function UserEditor({ id, name, username, auth, onDone }: User & { onDone: () =>
         new_auth: newAuth,
       }),
     })
-      .then(res => res.json())
-      .then(data => {
+      .then(async res => {
+        if (!res.ok) {
+          setError("Error updating profile", true);
+          return;
+        }
+        const data = await res.json();
         if (data.error) {
           setError("Error updating profile", true);
+          return;
         }
 
         if (username == newUsername) {
@@ -242,7 +247,11 @@ function UserEditor({ id, name, username, auth, onDone }: User & { onDone: () =>
           router.push(`/user/${newUsername}`);
         }
 
-        mutate(api_url(`/user/username/${newUsername}`));
+        mutate(api_url("/user/me"));
+        mutate(api_url(`/user/username/${username}`));
+        if (username !== newUsername) {
+          mutate(api_url(`/user/username/${newUsername}`));
+        }
         onDone();
       })
       .catch(() => {
@@ -280,7 +289,6 @@ function UserEditor({ id, name, username, auth, onDone }: User & { onDone: () =>
           value={newUsername}
           onChange={e => setNewUsername(e.target.value)}
           className="input-field"
-          pattern="[a-zA-Z0-9]+"
           minLength={1}
           maxLength={16}
         />
@@ -326,7 +334,7 @@ const UserPage: NextPage = () => {
   const [editingProfile, setEditingProfile] = useState(false);
 
   const { data: user, error } = useSWR<User>(
-    isReady ? api_url(`/user/username/${username}`) : null,
+    isReady && typeof username === "string" ? api_url(`/user/username/${username}`) : null,
     fetcher
   );
 

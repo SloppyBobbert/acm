@@ -24,7 +24,7 @@ type CountdownProps = {
 
 export default function Countdown({ to, onFinal }: CountdownProps): JSX.Element {
   const [time, setTime] = useState(new Date());
-  const fired = useRef(false);
+  const firedTarget = useRef<number | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 1000);
@@ -39,15 +39,11 @@ export default function Countdown({ to, onFinal }: CountdownProps): JSX.Element 
   const target = to.getTime();
 
   useEffect(() => {
-    fired.current = false;
-  }, [target]);
-
-  useEffect(() => {
-    if (remainingMs < 0 && onFinal && !fired.current) {
-      fired.current = true;
+    if (remainingMs < 0 && onFinal && firedTarget.current !== target) {
+      firedTarget.current = target;
       onFinal();
     }
-  }, [remainingMs, onFinal]);
+  }, [remainingMs, onFinal, target]);
 
   const seconds = Math.floor(diff) % 60;
   const minutes = Math.floor(diff / 60) % 60;

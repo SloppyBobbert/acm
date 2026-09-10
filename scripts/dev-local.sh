@@ -4,10 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$ROOT_DIR/.local/logs"
 
-# Next.js 12 crashes on Node 20+. Prefer Homebrew node@18 when present.
-NODE18_BIN="$(brew --prefix 2>/dev/null)/opt/node@18/bin"
-if [[ -x "${NODE18_BIN}/node" ]]; then
-    export PATH="${NODE18_BIN}:$PATH"
+# Prefer an existing Homebrew Node 18 installation when available.
+if command -v brew >/dev/null 2>&1 && brew_prefix="$(brew --prefix 2>/dev/null)"; then
+    NODE18_BIN="${brew_prefix}/opt/node@18/bin"
+    if [[ -x "${NODE18_BIN}/node" ]]; then
+        export PATH="${NODE18_BIN}:$PATH"
+    fi
 fi
 
 mkdir -p "$LOG_DIR"
@@ -73,7 +75,6 @@ if [[ ! -d "$ROOT_DIR/lilith/node_modules" ]]; then
 fi
 
 start_ramiel() {
-    local local_wasi="${WASI_SDK:-$ROOT_DIR/.local/wasi-sdk}"
     if [[ -x /opt/wasi-sdk/bin/clang++ ]]; then
         echo "Starting Ramiel at http://$RAMIEL_HOSTNAME:$RAMIEL_PORT"
         (cd "$ROOT_DIR" && "$ROOT_DIR/target/debug/ramiel" \
@@ -81,25 +82,16 @@ start_ramiel() {
             --port "$RAMIEL_PORT") \
             > "$LOG_DIR/ramiel.log" 2>&1 &
         ramiel_pid=$!
-    elif [[ -x "$local_wasi/bin/clang++" ]]; then
-        echo "Starting Ramiel with WASI_SDK=$local_wasi at http://$RAMIEL_HOSTNAME:$RAMIEL_PORT"
-        (cd "$ROOT_DIR" && WASI_SDK="$local_wasi" "$ROOT_DIR/target/debug/ramiel" \
-            --hostname "$RAMIEL_HOSTNAME" \
-            --port "$RAMIEL_PORT") \
-            > "$LOG_DIR/ramiel.log" 2>&1 &
-        ramiel_pid=$!
     elif command -v docker >/dev/null 2>&1; then
         echo "Starting Ramiel from Dockerfile.ramiel at http://$RAMIEL_HOSTNAME:$RAMIEL_PORT"
-        docker build --platform linux/amd64 --provenance=false -f Dockerfile.ramiel \
+        docker build --platform linux/amd64 --provenance=false -f "$ROOT_DIR/Dockerfile.ramiel" \
             -t acm-ramiel:local "$ROOT_DIR"
-        ramiel_container="acm-ramiel-local"
-        docker rm -f "$ramiel_container" >/dev/null 2>&1 || true
-        docker run --rm --name "$ramiel_container" --platform linux/amd64 \
-            -p "$RAMIEL_HOSTNAME:$RAMIEL_PORT:8082" acm-ramiel:local \
-            > "$LOG_DIR/ramiel.log" 2>&1 &
+        ramiel_container="$(docker run --detach --rm --platform linux/amd64 \
+            -p "$RAMIEL_HOSTNAME:$RAMIEL_PORT:8082" acm-ramiel:local)"
+        docker logs --follow "$ramiel_container" > "$LOG_DIR/ramiel.log" 2>&1 &
         ramiel_pid=$!
     else
-        echo "error: Ramiel needs /opt/wasi-sdk, WASI_SDK, or Docker (Dockerfile.ramiel)." >&2
+        echo "error: Ramiel needs /opt/wasi-sdk or Docker (Dockerfile.ramiel)." >&2
         exit 1
     fi
 }
@@ -110,12 +102,12 @@ echo "Starting API at http://$API_HOSTNAME:$PORT"
 (cd "$ROOT_DIR" && \
     JWT_SECRET="$JWT_SECRET" \
     DISCORD_SECRET="$DISCORD_SECRET" \
+    FRONTEND_ORIGIN="$FRONTEND_ORIGIN" \
     "$ROOT_DIR/target/debug/server" \
     --hostname "$API_HOSTNAME" \
     --port "$PORT" \
     --database-url "$DATABASE_URL" \
     --ramiel-url "$RAMIEL_URL" \
-    --frontend-origin "$FRONTEND_ORIGIN" \
     --cookie-secure "$COOKIE_SECURE" \
     --discord-client-id "$DISCORD_CLIENT_ID" \
     --discord-redirect-uri "$DISCORD_REDIRECT_URI") \
