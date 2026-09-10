@@ -2,6 +2,7 @@ import { NextPage } from "next";
 import Head from "next/head";
 import Link from "next/link";
 import useSWR from "swr";
+import ErrorBox from "../components/error-box";
 import Navbar from "../components/navbar";
 import { api_url, fetcher } from "../utils/fetcher";
 
@@ -18,71 +19,86 @@ type LeaderboardEntryProps = {
   count: number;
 };
 
+function LeaderboardEntry({
+  name,
+  username,
+  index,
+  count,
+}: LeaderboardEntryProps): JSX.Element {
+  return (
+    <Link href={`/user/${username}`}>
+      <a className="focus-ring surface-list-item flex flex-row gap-4 p-4">
+        <div className="flex h-9 w-9 items-center justify-center self-center rounded-full bg-blue-700 text-xl font-bold text-neutral-50">
+          {index}
+        </div>
+        <div className="flex flex-col">
+          <span className="text-xl font-bold">{name}</span>
+          <span className="text-neutral-500 dark:text-neutral-400">
+            {username}
+          </span>
+        </div>
+        <span className="badge-star ml-auto">
+          {count} ★
+        </span>
+      </a>
+    </Link>
+  );
+}
+
+function LoadingLeaderboardEntry(): JSX.Element {
+  return (
+    <div className="flex flex-col gap-4 border-b border-neutral-300 p-4 last:border-b-0 dark:border-neutral-700">
+      <div className="h-5 w-32 animate-pulse rounded bg-neutral-300" />
+      <div className="h-4 w-24 animate-pulse rounded bg-neutral-300" />
+    </div>
+  );
+}
+
 const Leaderboard: NextPage = () => {
   const { data, error } = useSWR<LeaderboardItem[]>(
     api_url("/leaderboard/first-place"),
     fetcher
   );
 
-  function LeaderboardEntry({
-    name,
-    username,
-    index,
-    count,
-  }: LeaderboardEntryProps): JSX.Element {
-    return (
-      <Link href={`/user/${username}`}>
-        <a className="border-b border-neutral-300 dark:border-neutral-700 p-4 last:border-b-0 flex flex-row gap-4 hover:bg-neutral-100 dark:bg-black dark:hover:bg-neutral-800 transition-colors">
-          <div className="bg-blue-700 text-neutral-50 flex items-center justify-center rounded-full w-9 h-9 text-xl font-bold self-center">
-            {index}
-          </div>
-          <div className="flex flex-col">
-            <span className="text-xl font-bold">{name}</span>
-            <span className="text-neutral-500 dark:text-neutral-400">
-              {username}
-            </span>
-          </div>
-          <span className="ml-auto bg-yellow-300 text-yellow-800 rounded-full px-4 h-9 self-center flex items-center">
-            {count} ★
-          </span>
-        </a>
-      </Link>
-    );
-  }
-
-  function LoadingLeaderboardEntry(): JSX.Element {
-    return (
-      <div className="border-b border-neutral-300 dark:border-neutral-700 last:border-b-0 flex flex-col p-4 gap-4">
-        <div className="w-32 h-5 animate-pulse rounded bg-neutral-300" />
-        <div className="w-24 h-4 animate-pulse rounded bg-neutral-300" />
-      </div>
-    );
-  }
-
-  if (error) return <div>Failed to load</div>;
-
   return (
-    <>
+    <div className="page-shell">
       <Navbar />
 
       <Head>
         <title>Leaderboard</title>
       </Head>
 
-      <div className="max-w-screen-md mx-auto mb-12">
-        <h1 className="text-3xl font-extrabold p-2">{"Leaderboard"}</h1>
+      <main className="page-main mb-12">
+        <h1 className="page-heading mb-4 px-4 md:px-0">Leaderboard</h1>
 
-        <div className="flex flex-col border-y sm:rounded-md sm:border sm:m-2 md:m-0 border-neutral-300 dark:border-neutral-700 bg-white overflow-hidden">
-          {!data
-            ? Array(3)
-              .fill(0)
-              .map((_, i) => <LoadingLeaderboardEntry key={i} />)
-            : data.map((entry, i) => (
-              <LeaderboardEntry key={i} index={i + 1} {...entry} />
-            ))}
-        </div>
-      </div>
-    </>
+        {error ? (
+          <div className="px-4 md:px-0">
+            <ErrorBox>Could not load the leaderboard.</ErrorBox>
+          </div>
+        ) : (
+          <div className="surface-card sm:mx-2 md:mx-0">
+            {!data ? (
+              <div aria-busy="true" aria-label="Loading leaderboard">
+                {Array(3)
+                  .fill(0)
+                  .map((_, i) => (
+                    <LoadingLeaderboardEntry key={i} />
+                  ))}
+              </div>
+            ) : data.length === 0 ? (
+              <p className="p-4 text-neutral-500 dark:text-neutral-400">
+                No rankings yet.
+              </p>
+            ) : (
+              data.map((entry, i) => (
+                <LeaderboardEntry key={entry.username} index={i + 1} {...entry} />
+              ))
+            )}
+          </div>
+        )}
+      </main>
+
+    </div>
   );
 };
 

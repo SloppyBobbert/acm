@@ -5,6 +5,21 @@ module.exports = {
   ],
   theme: {
     extend: {
+      colors: {
+        discord: {
+          DEFAULT: "#5865F2",
+          hover: "#6f7af2",
+        },
+      },
+      ringColor: {
+        focus: "#2563eb",
+      },
+      spacing: {
+        page: "1.5rem",
+      },
+      maxWidth: {
+        page: "768px",
+      },
       gridTemplateRows: {
         'min-full': 'min-content minmax(0,1fr)',
         'full-min': 'minmax(0,1fr) auto'
