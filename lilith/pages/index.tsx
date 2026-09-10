@@ -62,11 +62,7 @@ const Home: NextPage = () => {
 
             <Navbar />
 
-            <main className="flex flex-1 flex-col gap-2">
-                <h1 className="bg-gradient-to-b from-neutral-600 to-neutral-900 bg-clip-text py-2 text-center text-6xl font-extrabold text-transparent drop-shadow-md dark:from-neutral-50 dark:to-neutral-400">
-                    Chico ACM
-                </h1>
-
+            <main className="flex flex-1 flex-col">
                 <div className="w-full pt-4">
                     <div className="mx-auto w-full border-y border-neutral-300 dark:border-neutral-700 md:container md:h-[80vh] md:rounded md:border md:shadow">
                         <FeaturedProblemView />

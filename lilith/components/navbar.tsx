@@ -103,7 +103,7 @@ export default function Navbar(): JSX.Element {
     <header className="sticky top-0 z-50 w-full">
       <nav
         aria-label="Primary"
-        className="flex flex-col gap-4 border-b border-neutral-300 bg-white/90 p-4 backdrop-blur-lg dark:border-neutral-700 dark:bg-black/90 md:flex-row md:items-center"
+        className="flex flex-col gap-4 border-b border-neutral-300 bg-white p-4 dark:border-neutral-700 dark:bg-black md:flex-row md:items-center"
       >
         <div className="flex items-center">
           <Link href="/">
