@@ -25,7 +25,10 @@ export type AsymptoticComplexity =
     "LOG" |
     "CONSTANT";
 
+export type Language = "cpp" | "rust";
+
 export type Submission = {
+    language?: Language;
     id: number;
     problem_id: number;
     user_id: number;
@@ -44,12 +47,19 @@ export interface Store {
     editorFontSize: number;
 
     problemImpls: { [key: number]: string };
+    rustImpls: { [key: number]: string };
+    problemLanguages: { [key: number]: Language };
+    setProblemLanguage: (id: number, language: Language) => void;
 
     setVimEnabled: (vimEnabled: boolean) => void;
     setEditorTheme: (editorTheme: EditorThemeType) => void;
     setEditorFontSize: (fontSize: number) => void;
 
-    setProblemImpl: (id: number, impl: string) => void;
+    setProblemImpl: (id: number, impl: string, language?: Language) => void;
+}
+
+export function getProblemImpl(state: Store, id: number, language = state.problemLanguages[id] ?? "cpp") {
+    return language === "rust" ? state.rustImpls[id] : state.problemImpls[id];
 }
 
 export const useStore = createWithEqualityFn<Store>()(
@@ -59,11 +69,18 @@ export const useStore = createWithEqualityFn<Store>()(
             editorTheme: "system",
             editorFontSize: 18,
             problemImpls: {},
+            rustImpls: {},
+            problemLanguages: {},
+            setProblemLanguage: (id, language) => set(produce((state: Store) => {
+                state.problemLanguages[id] = language;
+            })),
 
-            setProblemImpl: (id, impl) =>
+            setProblemImpl: (id, impl, language = "cpp") =>
                 set(
                     produce((state: Store) => {
-                        state.problemImpls[id] = impl;
+                        if (language === "rust") state.rustImpls[id] = impl;
+                        else state.problemImpls[id] = impl;
+                        state.problemLanguages[id] = language;
                     })
                 ),
 

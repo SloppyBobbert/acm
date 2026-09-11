@@ -106,7 +106,7 @@ function DiagnosticDisplay(diagnostic: Diagnostic) {
             </span>
             &nbsp;
             <span className="font-mono">
-                {diagnostic.line}:{diagnostic.col}
+                {diagnostic.line > 0 ? `${diagnostic.line}:${diagnostic.col}` : "Compiler"}
             </span>
         </div>
         <code className="break-all bg-white dark:bg-black text-neutral-900 dark:text-neutral-50 p-1 border-b last-of-type:border-b-0 border-neutral-300 dark:border-neutral-700">{diagnostic.message}</code>

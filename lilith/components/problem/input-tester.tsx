@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { ProblemIDContext } from ".";
 import { api_url, fetcher } from "../../utils/fetcher";
 import { JobStatus, monitorJob } from "../../utils/job";
-import { useSession, useStore } from "../../utils/state";
+import { getProblemImpl, useSession, useStore } from "../../utils/state";
 import ErrorBox from "../error-box";
 import LoadingButton from "../loading-button";
 import QueueStatus from "../queue-status";
@@ -30,8 +30,9 @@ export default function InputTester() {
     const setError = useSession((state) => state.setError);
     const problem_id = useContext(ProblemIDContext);
     const implementation = useStore((state) =>
-        problem_id ? state.problemImpls[problem_id] : undefined
+        problem_id ? getProblemImpl(state, problem_id) : undefined
     );
+    const language = useStore(state => problem_id ? state.problemLanguages[problem_id] ?? "cpp" : "cpp");
 
     let { data, error } = useSWR<Test>(problem_id ? api_url(`/problems/${problem_id}/tests/0`) : null, fetcher);
 
@@ -57,9 +58,16 @@ export default function InputTester() {
                     problem_id,
                     input,
                     implementation,
+                    language,
                 }),
             });
 
+            if (!res.ok) {
+                const error = await res.json().catch(() => null);
+                setResultError(error?.message ?? error?.error ?? "Custom input was rejected.");
+                setTestResult(null);
+                return;
+            }
             let job: JobStatus<CustomInputResponse, string> = await res.json();
 
             let [data, err] = await monitorJob(job, (n) => setQueuePosition(n));

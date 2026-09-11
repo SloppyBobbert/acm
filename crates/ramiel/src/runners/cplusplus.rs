@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use shared::models::{
     forms::{CustomInputJob, GenerateTestsJob, SubmitJob},
+    language::Language,
     runner::{CustomInputResponse, Diagnostic, DiagnosticType, RunnerError, RunnerResponse},
     test::Test,
 };
@@ -13,15 +14,17 @@ use std::{
     str::Chars,
     sync::{Arc, Mutex, Weak},
 };
+#[cfg(test)]
+use tokio::process::Command;
 use tokio::{
     fs::{self, File},
-    io::{AsyncReadExt, AsyncWriteExt},
-    process::{Child, Command},
+    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
+    process::Child,
 };
 
 use super::{run_command, run_test_timed, timeout_error, Runner, TestResults, WasmRuntime};
 
-const CACHE_VERSION: &str = "clang++-wasi-v1";
+const CACHE_VERSION: &str = "clang++-wasi-v2-landlock";
 const CHILD_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(Clone)]
@@ -40,10 +43,10 @@ impl CPlusPlus {
 }
 
 #[derive(Clone, Default)]
-struct PrefixLocks(Arc<Mutex<HashMap<PathBuf, Weak<tokio::sync::Mutex<()>>>>>);
+pub(super) struct PrefixLocks(Arc<Mutex<HashMap<PathBuf, Weak<tokio::sync::Mutex<()>>>>>);
 
 impl PrefixLocks {
-    async fn acquire(
+    pub(super) async fn acquire(
         &self,
         prefix: PathBuf,
         deadline: tokio::time::Instant,
@@ -109,6 +112,7 @@ impl Runner for CPlusPlus {
                 &command,
                 test,
                 50,
+                Language::Cpp,
                 deadline,
                 timeout_message,
             )
@@ -153,6 +157,7 @@ impl Runner for CPlusPlus {
                 &command,
                 input.clone(),
                 None,
+                Language::Cpp,
                 deadline,
                 timeout_message,
             )
@@ -216,6 +221,7 @@ impl Runner for CPlusPlus {
             &reference_command,
             form.input.clone(),
             None,
+            Language::Cpp,
             deadline,
             timeout_message,
         )
@@ -237,6 +243,7 @@ impl Runner for CPlusPlus {
             &implementation_command,
             test,
             500,
+            Language::Cpp,
             deadline,
             timeout_message,
         )
@@ -249,7 +256,7 @@ impl Runner for CPlusPlus {
     }
 }
 
-fn process_file(file: &str) -> String {
+pub(super) fn process_file(file: &str) -> String {
     let bits_cpp = include_str!("default_header.h");
 
     let mut new_file = String::new();
@@ -261,7 +268,7 @@ fn process_file(file: &str) -> String {
     new_file
 }
 
-async fn compile_problem(
+pub(super) async fn compile_problem(
     prefix: &Path,
     implementation: &str,
     deadline: tokio::time::Instant,
@@ -308,7 +315,8 @@ async fn compile_problem(
         return Err(timeout_error(timeout_message));
     }
 
-    let mut command = Command::new("/opt/wasi-sdk/bin/clang++");
+    let mut command = super::compiler::command("/opt/wasi-sdk/bin/clang++");
+    command.current_dir(prefix);
     let implementation_path =
         implementation_filename
             .to_str()
@@ -359,9 +367,13 @@ async fn compile_problem(
 
     if !output.status.success() {
         invalidate_compile_outputs(&marker_filename, &wasm_filename).await;
+        if output.status.code() == Some(125) {
+            return Err(super::compiler::isolation_error());
+        }
 
         return Err(parse_cplusplus_error(
             String::from_utf8_lossy(&output.stderr).to_string(),
+            output.stderr_truncated,
         ));
     }
 
@@ -396,9 +408,29 @@ async fn cache_matches(
     Ok(source == implementation.as_bytes() && marker == cache_key)
 }
 
-struct ChildOutput {
-    status: std::process::ExitStatus,
-    stderr: Vec<u8>,
+pub(super) struct ChildOutput {
+    pub(super) status: std::process::ExitStatus,
+    pub(super) stderr: Vec<u8>,
+    pub(super) stderr_truncated: bool,
+}
+
+const MAX_COMPILER_STDERR: usize = 1024 * 1024;
+
+async fn drain_stderr(
+    mut reader: impl AsyncRead + Unpin,
+    output: &mut Vec<u8>,
+) -> io::Result<bool> {
+    let mut buffer = [0; 8192];
+    let mut truncated = false;
+    loop {
+        let count = reader.read(&mut buffer).await?;
+        if count == 0 {
+            return Ok(truncated);
+        }
+        let keep = count.min(MAX_COMPILER_STDERR.saturating_sub(output.len()));
+        output.extend_from_slice(&buffer[..keep]);
+        truncated |= keep < count;
+    }
 }
 
 /// Ensures compiler descendants cannot outlive an interrupted wait.
@@ -456,7 +488,7 @@ async fn cleanup_child(child: &mut Child, pgid: i32, guard: &mut ProcessGroupGua
     }
 }
 
-async fn wait_for_child(
+pub(super) async fn wait_for_child(
     child: &mut Child,
     pgid: i32,
     deadline: tokio::time::Instant,
@@ -475,8 +507,8 @@ async fn wait_for_child(
 
     let completed = {
         let wait_and_drain = async {
-            let (status, _) = tokio::try_join!(child.wait(), stderr.read_to_end(&mut output))?;
-            Ok::<_, RunnerError>(status)
+            let result = tokio::try_join!(child.wait(), drain_stderr(&mut stderr, &mut output))?;
+            Ok::<_, RunnerError>(result)
         };
         tokio::pin!(wait_and_drain);
         tokio::select! {
@@ -487,11 +519,12 @@ async fn wait_for_child(
     };
 
     match completed {
-        Some(Ok(status)) => {
+        Some(Ok((status, stderr_truncated))) => {
             cleanup_guard.disarm();
             Ok(Some(ChildOutput {
                 status,
                 stderr: output,
+                stderr_truncated,
             }))
         }
         Some(Err(error)) => {
@@ -507,7 +540,7 @@ async fn wait_for_child(
     }
 }
 
-async fn remove_file_checked(path: &Path) -> io::Result<()> {
+pub(super) async fn remove_file_checked(path: &Path) -> io::Result<()> {
     match fs::remove_file(path).await {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -577,7 +610,7 @@ fn diagnostic_from_str(s: &str) -> Result<Option<Diagnostic>, RunnerError> {
     iter.next();
 
     let diagnostic_type = match error_type.as_str() {
-        "error" => DiagnosticType::Error,
+        "error" | "fatal error" => DiagnosticType::Error,
         "warning" => DiagnosticType::Warning,
         _ => DiagnosticType::Note,
     };
@@ -592,7 +625,7 @@ fn diagnostic_from_str(s: &str) -> Result<Option<Diagnostic>, RunnerError> {
     }))
 }
 
-fn parse_cplusplus_error(err: String) -> RunnerError {
+fn parse_cplusplus_error(err: String, truncated: bool) -> RunnerError {
     let mut diagnostics = vec![];
 
     println!("{err}");
@@ -600,13 +633,51 @@ fn parse_cplusplus_error(err: String) -> RunnerError {
     for line in err.lines() {
         match diagnostic_from_str(line) {
             Ok(Some(diagnostic)) => diagnostics.push(diagnostic),
-            Ok(None) => {}
+            Ok(None) => {
+                let diagnostic_type = if line.contains("error:") {
+                    DiagnosticType::Error
+                } else if line.contains("warning:") {
+                    DiagnosticType::Warning
+                } else if line.contains("note:") {
+                    DiagnosticType::Note
+                } else {
+                    continue;
+                };
+                diagnostics.push(Diagnostic {
+                    line: 0,
+                    col: 0,
+                    message: line.to_owned(),
+                    diagnostic_type,
+                });
+            }
             Err(e) => {
                 return e;
             }
         }
     }
 
+    if diagnostics.is_empty() {
+        diagnostics.push(Diagnostic {
+            line: 0,
+            col: 0,
+            diagnostic_type: DiagnosticType::Error,
+            message: if err.trim().is_empty() {
+                "C++ compilation failed without diagnostics.".into()
+            } else {
+                err
+            },
+        });
+    }
+    if truncated {
+        diagnostics.push(Diagnostic {
+            line: 0,
+            col: 0,
+            diagnostic_type: DiagnosticType::Note,
+            message:
+                "Compiler diagnostics exceeded the 1 MiB limit. Additional output was omitted."
+                    .into(),
+        });
+    }
     RunnerError::CompilationError { diagnostics }
 }
 
@@ -614,6 +685,55 @@ fn parse_cplusplus_error(err: String) -> RunnerError {
 mod tests {
     use super::*;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn compiler_failures_without_source_locations_remain_visible() {
+        for message in ["rosetta error: executable access denied", ""] {
+            let RunnerError::CompilationError { diagnostics } =
+                parse_cplusplus_error(message.into(), false)
+            else {
+                panic!("expected compiler diagnostics");
+            };
+            assert_eq!(diagnostics.len(), 1);
+            assert_eq!(diagnostics[0].line, 0);
+            assert!(!diagnostics[0].message.is_empty());
+            assert!(matches!(
+                diagnostics[0].diagnostic_type,
+                DiagnosticType::Error
+            ));
+        }
+        let diagnostic = diagnostic_from_str(
+            "/tmp/acm/job/implementation.cpp:40:1: fatal error: Permission denied",
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(diagnostic.diagnostic_type, DiagnosticType::Error));
+    }
+
+    #[test]
+    fn mixed_compiler_diagnostics_keep_linker_errors() {
+        let RunnerError::CompilationError { diagnostics } = parse_cplusplus_error(
+            "/tmp/job/implementation.cpp:40:1: warning: unused variable\nwasm-ld: error: undefined symbol: missing\nclang++: error: linker command failed".into(), false,
+        ) else { panic!("expected compiler diagnostics") };
+        assert_eq!(diagnostics.len(), 3);
+        assert_eq!(diagnostics[0].line, 1);
+        assert!(diagnostics[1..]
+            .iter()
+            .all(|item| item.line == 0 && matches!(item.diagnostic_type, DiagnosticType::Error)));
+        assert!(diagnostics[1].message.contains("undefined symbol"));
+        assert!(diagnostics[2].message.contains("linker command failed"));
+    }
+
+    #[tokio::test]
+    async fn compiler_stderr_is_bounded_but_fully_drained() {
+        let bytes = vec![b'x'; MAX_COMPILER_STDERR + 8192];
+        let mut reader = bytes.as_slice();
+        let mut output = Vec::new();
+        assert!(drain_stderr(&mut reader, &mut output).await.unwrap());
+        assert_eq!(output.len(), MAX_COMPILER_STDERR);
+        assert!(reader.is_empty());
+        assert!(!drain_stderr(&b"small"[..], &mut Vec::new()).await.unwrap());
+    }
 
     #[tokio::test]
     async fn invalidating_compile_cache_removes_source_and_module() {

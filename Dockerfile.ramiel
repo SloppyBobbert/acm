@@ -11,6 +11,18 @@ RUN --mount=type=cache,id=cargo-registry-rust-1.92-${TARGETARCH},target=/usr/loc
     cargo build --release --locked --package ramiel && \
     cp /app/target/release/ramiel /tmp/ramiel
 
+FROM --platform=$ACM_DOCKER_PLATFORM rust:1.92.0-bookworm AS submission-toolchain
+RUN rustup target add wasm32-wasip1 && \
+    cp -a "$(rustc --print sysroot)" /opt/submission-rust
+
+FROM submission-toolchain AS sandbox-builder
+RUN rustup target add x86_64-unknown-linux-musl
+COPY crates/ramiel/compiler-sandbox.rs /compiler-sandbox.rs
+RUN linker="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/^host:/{print $2}')/bin/rust-lld" && \
+    rustc --edition=2021 --target=x86_64-unknown-linux-musl \
+        -C linker="$linker" -C linker-flavor=ld.lld -C opt-level=2 -C panic=abort \
+        /compiler-sandbox.rs -o /compiler-sandbox
+
 FROM --platform=$ACM_DOCKER_PLATFORM debian:bookworm-slim
 WORKDIR /
 
@@ -28,6 +40,8 @@ RUN apt-get purge -y wget && \
 
 RUN useradd --system --create-home --uid 10001 ramiel
 
+COPY --from=submission-toolchain /opt/submission-rust /opt/submission-rust
+COPY --from=sandbox-builder /compiler-sandbox /usr/local/libexec/acm-compiler-sandbox
 COPY --from=builder /tmp/ramiel /usr/local/bin/ramiel
 COPY ./wasmtime-cache.toml /wasmtime-cache.toml
 

@@ -2,6 +2,7 @@ use actix_web::rt::task;
 use async_trait::async_trait;
 use shared::models::{
     forms::{CustomInputJob, GenerateTestsJob, SubmitJob},
+    language::Language,
     runner::{CustomInputResponse, RunnerError, RunnerResponse},
     test::{Test, TestResult},
 };
@@ -21,9 +22,13 @@ use wasmtime_wasi::{
     WasiCtxBuilder,
 };
 
+mod compiler;
 mod cplusplus;
+mod rust;
 
+pub use compiler::initialize as initialize_compiler_sandbox;
 pub use cplusplus::CPlusPlus;
+pub use rust::Rust;
 
 pub const EPOCH_PERIOD: Duration = Duration::from_millis(10);
 const MAX_WASM_MODULE_BYTES: u64 = 64 * 1024 * 1024;
@@ -135,6 +140,7 @@ async fn run_test_timed(
     command: &str,
     test: Test,
     padding: i64,
+    language: Language,
     deadline: tokio::time::Instant,
     timeout_message: &str,
 ) -> Result<(TestResult, String), RunnerError> {
@@ -147,6 +153,7 @@ async fn run_test_timed(
         command,
         test.input.clone(),
         max_runtime,
+        language,
         deadline,
         timeout_message,
     )
@@ -234,6 +241,7 @@ pub(crate) async fn run_command(
     command: &str,
     input: WasmFunctionCall,
     fuel: Option<i64>,
+    language: Language,
     deadline: tokio::time::Instant,
     timeout_message: &str,
 ) -> Result<(FunctionValue, String, u64), RunnerError> {
@@ -354,7 +362,10 @@ pub(crate) async fn run_command(
                 }
             })?;
 
-        let result = input.call(&mut store, &instance);
+        let result = match language {
+            Language::Cpp => input.call(&mut store, &instance),
+            Language::Rust => input.call_integers(&mut store, &instance),
+        };
 
         drop(store);
 

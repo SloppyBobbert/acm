@@ -25,9 +25,47 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
+      - run: rustfmt --edition 2021 --check crates/ramiel/compiler-sandbox.rs
       - run: cargo check --workspace --locked
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+
+  runner-isolation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build native runner
+        run: docker build --platform linux/amd64 -f Dockerfile.ramiel -t acm-runner:test .
+      - name: Start restricted runner
+        run: |
+          docker run --detach --init --name acm-runner-test \
+            --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,exec,nosuid,size=512m \
+            --cpus 2 --memory 2g --pids-limit 256 acm-runner:test
+          docker exec acm-runner-test curl --fail --silent --show-error \
+            --retry 10 --retry-connrefused --retry-delay 1 --max-time 10 \
+            http://127.0.0.1:8082/healthz
+      - name: Test real compilers, execution limits, and file isolation
+        run: python3 scripts/test-rust-runner.py docker://acm-runner-test
+      - name: Check fail-closed startup without the helper
+        run: |
+          set +e
+          output=$(docker run --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,exec,nosuid,size=512m \
+            --tmpfs /usr/local/libexec:ro,size=1m acm-runner:test 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -eq 1
+          printf '%s\n' "$output" | grep -F 'Cannot start compiler filesystem isolation'
+      - name: Show runner diagnostics on failure
+        if: failure()
+        run: docker logs acm-runner-test
 
   frontend:
     runs-on: ubuntu-latest

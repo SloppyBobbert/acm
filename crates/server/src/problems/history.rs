@@ -10,6 +10,7 @@ use crate::{auth::Claims, error::ServerError, pagination::Pagination};
 
 #[derive(Serialize, FromRow)]
 pub struct HistoryItem {
+    language: shared::models::language::Language,
     id: i64,
     success: bool,
     runtime: i64,
@@ -28,6 +29,7 @@ pub async fn history(
     let submissions: Vec<HistoryItem> = sqlx::query_as(
         r#"
         SELECT
+            language,
             id,
             success,
             runtime,

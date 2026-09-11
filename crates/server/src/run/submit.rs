@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use shared::models::{
     forms::SubmitJob,
+    language::{Language, RustSignature},
     runner::{RunnerError, RunnerResponse},
     test::Test,
 };
@@ -17,6 +18,8 @@ use super::{add_job, JobMap, JobQueue, JobStatus, Queueable};
 
 #[derive(Deserialize)]
 pub struct SubmitForm {
+    #[serde(default)]
+    pub language: Language,
     pub problem_id: i64,
     pub implementation: String,
 }
@@ -58,7 +61,12 @@ pub async fn submit(
             .await
             .map_err(|_| ServerError::NotFound)?;
 
+    if form.language == Language::Rust {
+        RustSignature::from_calls(tests.iter().map(|test| &test.input))?;
+    }
+
     let queue_item = Box::new(SubmitJob {
+        language: form.language,
         problem_id: form.problem_id,
         user_id: claims.user_id,
         implementation: form.implementation.clone(),
@@ -81,7 +89,7 @@ impl Queueable for SubmitJob {
     ) -> Result<Value, ServerError> {
         let client = Client::new();
         let res = client
-            .post(format!("{ramiel_url}/run/c++"))
+            .post(format!("{ramiel_url}/run/{}", self.language.route()))
             .json(self)
             .send()
             .await
@@ -137,9 +145,10 @@ impl Queueable for SubmitJob {
                 error,
                 code,
                 time,
-                complexity
+                complexity,
+                language
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING *
             "#,
         )
@@ -151,6 +160,7 @@ impl Queueable for SubmitJob {
         .bind(&self.implementation)
         .bind(now)
         .bind(complexity)
+        .bind(self.language)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| {

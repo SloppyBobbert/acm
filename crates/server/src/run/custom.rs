@@ -2,7 +2,7 @@ use axum::{async_trait, Extension, Json};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
-use shared::models::{forms::CustomInputJob, runner::RunnerError};
+use shared::models::{forms::CustomInputJob, language::Language, runner::RunnerError};
 use sqlx::SqlitePool;
 use tokio::sync::broadcast::{self, Sender};
 use wasm_memory::WasmFunctionCall;
@@ -13,6 +13,8 @@ use super::{add_job, JobMap, JobQueue, JobStatus, Queueable};
 
 #[derive(Deserialize)]
 pub struct CustomProblemInputForm {
+    #[serde(default)]
+    pub language: Language,
     pub problem_id: i64,
     pub implementation: String,
     pub input: WasmFunctionCall,
@@ -36,15 +38,21 @@ pub async fn custom(
         FROM
             problems
         WHERE
-            id = ?
+            id = ? AND (visible OR ?)
         "#,
     )
     .bind(form.problem_id)
+    .bind(claims.validate_officer().is_ok())
     .fetch_one(&pool)
     .await
     .map_err(|_| ServerError::NotFound)?;
 
+    if form.language == Language::Rust {
+        super::rust_signature(&pool, form.problem_id, Some(&form.input)).await?;
+    }
+
     let queue_item = Box::new(CustomInputJob {
+        language: form.language,
         problem_id: form.problem_id,
         user_id: claims.user_id,
         implementation: form.implementation,
@@ -68,7 +76,10 @@ impl Queueable for CustomInputJob {
     ) -> Result<Value, ServerError> {
         let client = Client::new();
         let res = client
-            .post(format!("{ramiel_url}/custom-input/c++"))
+            .post(format!(
+                "{ramiel_url}/custom-input/{}",
+                self.language.route()
+            ))
             .json(self)
             .send()
             .await

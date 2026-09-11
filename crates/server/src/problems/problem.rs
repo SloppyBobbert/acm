@@ -5,6 +5,26 @@ use crate::{auth::Claims, error::ServerError};
 
 use super::{Difficulty, Problem};
 
+pub async fn rust_template(
+    Path(problem_id): Path<i64>,
+    Extension(pool): Extension<SqlitePool>,
+    claims: Claims,
+) -> Result<Json<String>, ServerError> {
+    let (visible,): (bool,) = sqlx::query_as("SELECT visible FROM problems WHERE id = ?")
+        .bind(problem_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|_| ServerError::NotFound)?;
+    if !visible && claims.validate_officer().is_err() {
+        return Err(ServerError::NotFound);
+    }
+    Ok(Json(
+        crate::run::rust_signature(&pool, problem_id, None)
+            .await?
+            .template(),
+    ))
+}
+
 pub async fn problem(
     Path(problem_id): Path<i64>,
     Extension(pool): Extension<SqlitePool>,

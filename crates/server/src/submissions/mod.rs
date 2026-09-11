@@ -12,6 +12,8 @@ mod validate;
 
 #[derive(Deserialize, Serialize, PartialEq, Clone, FromRow)]
 pub struct Submission {
+    #[serde(default)]
+    pub language: shared::models::language::Language,
     pub id: i64,
     pub problem_id: i64,
     pub user_id: i64,

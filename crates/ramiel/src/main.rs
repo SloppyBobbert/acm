@@ -11,7 +11,7 @@ use actix_web::{get, middleware::Logger, post, web, web::Json, App, HttpResponse
 mod runners;
 
 use clap::Parser;
-use runners::{CPlusPlus, Runner, WasmRuntime};
+use runners::{CPlusPlus, Runner, Rust, WasmRuntime};
 
 const RUN_TIMEOUT_MESSAGE: &str = "The tests took too long to run. (process killed)";
 
@@ -68,6 +68,38 @@ async fn cplusplus_custom_input(
     )
 }
 
+#[post("/run/rust")]
+async fn rust_run(
+    runner: web::Data<Rust>,
+    form: Json<SubmitJob>,
+) -> Json<Result<RunnerResponse, RunnerError>> {
+    Json(
+        runner
+            .run_tests(
+                form.into_inner(),
+                tokio::time::Instant::now() + Duration::from_secs(360),
+                RUN_TIMEOUT_MESSAGE,
+            )
+            .await,
+    )
+}
+
+#[post("/custom-input/rust")]
+async fn rust_custom_input(
+    runner: web::Data<Rust>,
+    form: Json<CustomInputJob>,
+) -> Json<Result<CustomInputResponse, RunnerError>> {
+    Json(
+        runner
+            .run_custom_input(
+                form.into_inner(),
+                tokio::time::Instant::now() + Duration::from_secs(60),
+                RUN_TIMEOUT_MESSAGE,
+            )
+            .await,
+    )
+}
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -88,13 +120,15 @@ struct Args {
 fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("warn"));
     let args = Args::parse();
+    runners::initialize_compiler_sandbox()?;
     let runtime = WasmRuntime::new(&args.wasmtime_cache_config).map_err(std::io::Error::other)?;
-    let runner = CPlusPlus::new(runtime);
+    let runner = CPlusPlus::new(runtime.clone());
+    let rust = Rust::new(runtime);
 
-    actix_web::rt::System::new().block_on(run_server(args, runner))
+    actix_web::rt::System::new().block_on(run_server(args, runner, rust))
 }
 
-async fn run_server(args: Args, runner: CPlusPlus) -> std::io::Result<()> {
+async fn run_server(args: Args, runner: CPlusPlus, rust: Rust) -> std::io::Result<()> {
     let json_cfg = web::JsonConfig::default()
         // 3mb limit
         .limit(100_000_000);
@@ -104,6 +138,9 @@ async fn run_server(args: Args, runner: CPlusPlus) -> std::io::Result<()> {
             .wrap(Logger::default())
             .app_data(json_cfg.clone())
             .app_data(web::Data::new(runner.clone()))
+            .app_data(web::Data::new(rust.clone()))
+            .service(rust_run)
+            .service(rust_custom_input)
             .service(healthz)
             .service(cplusplus_run)
             .service(cplusplus_generate_tests)
