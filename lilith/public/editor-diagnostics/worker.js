@@ -20,6 +20,7 @@ self.onmessage = async ({ data }) => {
             parser.setLanguage(grammar);
         }
         if (language !== selected) throw new Error("Syntax language changed.");
+        self.postMessage({ ...identity, ready: true });
         const started = performance.now();
         tree = parser.parse(source, null, { progressCallback: () => performance.now() - started > 2000 });
         if (!tree) throw new Error("Syntax check exceeded two seconds.");

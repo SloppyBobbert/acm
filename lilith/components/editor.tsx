@@ -114,9 +114,11 @@ export default function Editor({
     return (
         <div className="h-full grid grid-rows-full-min grid-cols-full">
             <div ref={editorRef} />
-            {editor && diagnosticProblem !== undefined && language !== "markdown" &&
-                <EditorDiagnostics editor={editor} problem={diagnosticProblem} language={language} />}
-            {vimEnabled && <div className="border-neutral-300 dark:border-neutral-700 border-t font-mono" ref={statusBarRef} />}
+            <div>
+                {editor && diagnosticProblem !== undefined && language !== "markdown" &&
+                    <EditorDiagnostics editor={editor} problem={diagnosticProblem} language={language} />}
+                {vimEnabled && <div className="border-neutral-300 dark:border-neutral-700 border-t font-mono" ref={statusBarRef} />}
+            </div>
         </div>
     );
 }

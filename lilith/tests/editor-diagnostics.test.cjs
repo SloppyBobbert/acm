@@ -59,6 +59,9 @@ test('persisted default off and compiler identities reject restoration, off/on, 
   session.finishCompilerCheck(second, 'new');
   session.finishCompilerCheck(first, 'old');
   assert.equal(useSession.getState().compilerError, 'new');
+  const pending = begin();
+  assert.equal(useSession.getState().compilerError, 'new'); // A transport failure must not erase these markers.
+  session.finishCompilerCheck(pending, 'new');
   for (const invalidate of [() => store.setProblemImpl(1, 'x'), () => store.setProblemLanguage(1, 'rust'),
     () => { store.setInlineCodeChecks(false); store.setInlineCodeChecks(true); }, () => session.mountDiagnosticEditor()]) {
     const request = begin(); invalidate(); session.finishCompilerCheck(request, 'stale');
@@ -90,9 +93,85 @@ test('scheduler debounces, bounds concurrency, rejects stale replies, and cleans
   update(5); tick(300); const late = worker.onmessage; checks.dispose(); late({ data: { ...sent[2], markers: [] } });
   assert.equal(delivered.length, 1); assert.equal(stopped, 1); assert.equal(timers.size, 0);
   const failing = syntaxChecks(() => worker, () => assert.fail(), s => statuses.push(s));
-  failing.update({ editor: 1, session: 3, revision: 1, version: 1, language: 'rust', source: 'x' }); tick(300); tick(2000);
+  failing.update({ editor: 1, session: 3, revision: 1, version: 1, language: 'rust', source: 'x' }); tick(300);
+  worker.onmessage({ data: { ...sent.at(-1), ready: true } }); tick(2000);
   assert.match(statuses.at(-1), /unavailable/);
   failing.update({ source: '😀'.repeat(60000) }); assert.match(statuses.at(-1), /200 KiB/); failing.dispose();
+});
+
+test('initialization gets ten seconds and one retry; ready starts the separate parse deadline', () => {
+  let clock = 0, next = 0;
+  const timers = new Map(), workers = [], statuses = [], delivered = [];
+  const tick = ms => { clock += ms; for (const [id, t] of [...timers]) if (t.at <= clock) { timers.delete(id); t.fn(); } };
+  const { syntaxChecks } = load('utils/syntax-checks.ts', { setTimeout: (fn, ms) => { const id = ++next; timers.set(id, { fn, at: clock + ms }); return id; }, clearTimeout: id => timers.delete(id) });
+  const checks = syntaxChecks(() => {
+    const worker = { sent: [], postMessage(r) { this.sent.push(r); }, terminate() { this.stopped = true; } };
+    workers.push(worker); return worker;
+  }, r => delivered.push(r), s => statuses.push(s));
+  const update = revision => checks.update({ editor: 1, session: 2, revision, version: revision, source: 'x', language: 'cpp' });
+  update(1); tick(300);
+  assert.match(statuses.at(-1), /Loading syntax checks/);
+  tick(9999); assert.equal(workers[0].stopped, undefined);
+  const staleReply = workers[0].onmessage;
+  tick(1); assert.equal(workers[0].stopped, true); assert.equal(workers.length, 2);
+  const request = workers[1].sent[0];
+  staleReply({ data: { ...request, ready: true } });
+  tick(2500); assert.equal(workers[1].stopped, undefined);
+  workers[1].onmessage({ data: { ...request, ready: true } });
+  assert.equal(delivered.length, 0);
+  tick(1999); assert.equal(workers[1].stopped, undefined);
+  tick(1); assert.equal(workers[1].stopped, true);
+  tick(20000); assert.equal(workers.length, 2); // Never automatically retry a parse timeout.
+  checks.dispose(); assert.equal(timers.size, 0);
+
+  const exhausted = syntaxChecks(() => {
+    const worker = { postMessage() {}, terminate() { this.stopped = true; } };
+    workers.push(worker); return worker;
+  }, () => assert.fail(), s => statuses.push(s));
+  exhausted.update({ editor: 1, session: 3, revision: 1, version: 1, source: 'x', language: 'rust' });
+  tick(300); tick(10000); tick(10000); tick(20000);
+  assert.equal(workers.length, 4); assert.equal(workers[3].stopped, true);
+  assert.match(statuses.at(-1), /unavailable/);
+  exhausted.dispose(); assert.equal(timers.size, 0);
+});
+
+test('Submit and Run finish every compiler check, preserving prior errors on transport failure', async () => {
+  for (const [file, handler] of [['code-runner.tsx', 'submitProblem'], ['input-tester.tsx', 'testInput']]) {
+    const tree = ts.createSourceFile(file, fs.readFileSync(path.join(root, 'components/problem', file), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    let body;
+    const visit = node => { if (ts.isVariableDeclaration(node) && node.name.getText(tree) === handler) body = node.initializer.getText(tree); ts.forEachChild(node, visit); };
+    visit(tree); assert.ok(body);
+    const code = ts.transpileModule(`(${body})()`, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
+    for (const failure of ['http', 'network', 'json', 'poll', 'success', 'compiler']) {
+      const request = {}, finished = [], state = { compilerError: 'previous compiler error', beginCompilerCheck: () => request,
+        finishCompilerCheck: (...args) => finished.push(args) };
+      let loading;
+      await vm.runInNewContext(code, { implementation: 'x', language: 'cpp', id: 1, problem_id: 1, input: {},
+        useSession: { getState: () => state }, setLoading: value => { loading = value; },
+        fetch: async () => { if (failure === 'network') throw new Error('network'); return { ok: failure !== 'http', json: async () => { if (failure === 'json') throw new Error('JSON'); return {}; } }; },
+        monitorJob: async () => { if (failure === 'poll') throw new Error('poll'); return failure === 'compiler' ? [null, 'new compiler error'] : [{}, null]; },
+        api_url: x => x, setTimeout: () => {}, console: { log() {} }, setError() {}, setResultError() {}, setTestResult() {}, setQueuePosition() {},
+      });
+      assert.equal(loading, false);
+      assert.equal(finished.length, 1, `${file}: ${failure}`);
+      assert.equal(finished[0][0], request);
+      if (failure === 'success') assert.equal(finished[0][1] == null, true);
+      else assert.equal(finished[0][1], failure === 'compiler' ? 'new compiler error' : 'previous compiler error');
+    }
+  }
+});
+
+test('editor keeps diagnostics and Vim inside one footer grid row', () => {
+  for (const vim of [false, true]) {
+    const Editor = load('components/editor.tsx', { window: {}, React: require('react'), require: name => ({
+      react: { useEffect() {}, useRef: () => ({ current: null }), useState: () => [{ getModel() {} }, () => {}] },
+      'monaco-editor': {}, 'monaco-vim': {}, '../utils/state': { useStore: () => [vim, 'light', 18] }, './editor-diagnostics': { default: () => null },
+    })[name] }).default;
+    const element = Editor({ onChange() {}, value: 'x', language: 'cpp', diagnosticProblem: 1 });
+    assert.equal(element.props.children.length, 2);
+    assert.equal(element.props.children[1].type, 'div');
+    assert.equal(element.props.children[1].props.children.length, 2);
+  }
 });
 
 test('editor effects survive Strict Mode setup/cleanup replay and disposed Monaco models', () => {

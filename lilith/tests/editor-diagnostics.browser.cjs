@@ -28,6 +28,8 @@ const fixture = () => {
     else if (u.pathname === '/submissions/91') body = { id: 91, problem_id: 991, code: f.historySource || cpp, language: f.historyLanguage || 'cpp' };
     else if (u.pathname.endsWith('/leaderboard') || u.pathname.endsWith('/tests')) body = [];
     else if (u.pathname === '/run/custom' || u.pathname === '/run/submit') {
+      if (f.transportFailure === 'network') throw new Error('SIMULATED network failure');
+      if (f.transportFailure === 'http') return new Response(JSON.stringify({ error: 'SIMULATED HTTP failure' }), { status: 503 });
       const id = f.jobs.length + 1;
       f.jobs.push({ id, path: u.pathname, error: f.nextError, deferred: f.deferred });
       body = { id, queue_position: 0 };
@@ -52,7 +54,13 @@ const fixture = () => {
         this.addEventListener('message', event => f.messages.push(event.data));
       }
     }
-    terminate() { if (this.record) this.record.terminated = true; super.terminate(); }
+    postMessage(message) {
+      if (this.record && f.initDelay) {
+        const delay = f.initDelay; f.initDelay = 0;
+        this.delayTimer = setTimeout(() => super.postMessage(message), delay);
+      } else super.postMessage(message);
+    }
+    terminate() { clearTimeout(this.delayTimer); if (this.record) this.record.terminated = true; super.terminate(); }
   };
   window.editorModel = () => {
     const root = document.getElementById('__next');
@@ -105,6 +113,20 @@ const fixture = () => {
     await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     await wait('!document.getElementById("inline-code-checks")');
   };
+  const vim = async enabled => {
+    await click('Settings'); await wait('!!document.getElementById("inline-code-checks")');
+    await evaluate(`{ const input = document.querySelector('input[type="checkbox"]:not(#inline-code-checks)'); if (input.checked !== ${enabled}) input.click(); }`);
+    await wait(`JSON.parse(localStorage.data).state.vimEnabled === ${enabled}`);
+    await evaluate(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    await wait('!document.getElementById("inline-code-checks")');
+  };
+  const footer = async (checks, vimEnabled) => {
+    await wait(`(() => { const grid=document.querySelector('.monaco-editor')?.parentElement?.parentElement; return grid?.children.length===2 && grid.children[1].children.length===${Number(checks) + Number(vimEnabled)}; })()`);
+    const size = await evaluate(`(() => { const grid=document.querySelector('.monaco-editor').parentElement.parentElement; return {rows:getComputedStyle(grid).gridTemplateRows, editor:grid.children[0].getBoundingClientRect().height, total:grid.getBoundingClientRect().height, footer:grid.children[1].getBoundingClientRect().height}; })()`);
+    assert.equal(size.rows.split(/\s+/).length, 2);
+    assert.ok(size.editor > 0 && size.editor + size.footer <= size.total + 1);
+    milestones.push({ phase: 'Editor footer', checks, vimEnabled, size });
+  };
   try {
     const target = (await call('Target.createTarget', { url: 'about:blank' }, false)).targetId;
     session = (await call('Target.attachToTarget', { targetId: target, flatten: true }, false)).sessionId;
@@ -118,7 +140,20 @@ const fixture = () => {
     await source('int solve( bad');
     await evaluate('new Promise(r=>setTimeout(r,600))');
     assert.equal(await evaluate('fixture.workers.length'), 0);
+    await footer(false, false);
+    // Delay first worker input to simulate slow initialization while using the actual assets/parser.
+    await evaluate('fixture.initDelay=2500');
     await toggle(true);
+    await wait('document.body.innerText.includes("Loading syntax checks")');
+    await evaluate('new Promise(r=>setTimeout(r,2100))');
+    assert.equal(await evaluate('document.body.innerText.includes("Syntax checks unavailable")'), false);
+    await wait('inlineMarkers().length > 0');
+    await footer(true, false);
+    await vim(true); await footer(true, true);
+    await toggle(false); await footer(false, true);
+    assert.equal(await evaluate('fixture.workers.filter(w=>!w.terminated).length'), 0);
+    await toggle(true); await footer(true, true);
+    await vim(false); await footer(true, false);
     await wait('inlineMarkers().length > 0');
     assert.equal(await evaluate('fixture.workers.filter(w=>!w.terminated).length'), 1);
     const cpp = 'int solve(int x) { return x; }';
@@ -156,6 +191,19 @@ const fixture = () => {
     await click('Run'); await wait('inlineMarkers().some(m=>m.className === "squiggly-error" && m.range.startColumn === 8)');
     assert.equal(await evaluate('inlineMarkers().find(m=>m.className === "squiggly-error").range.startColumn'), 8);
     assert.equal(await evaluate('document.body.innerText.includes("SIMULATED wrapper error")'), true);
+    for (const button of ['Run', 'Submit']) {
+      for (const failure of ['http', 'network']) {
+        const count = await evaluate('fixture.requests.length');
+        await evaluate(`fixture.transportFailure=${JSON.stringify(failure)}`);
+        await click(button);
+        await wait(`fixture.requests.length > ${count} && Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()===${JSON.stringify(button)} && !b.disabled)`);
+        assert.equal(await evaluate('inlineMarkers().some(m=>m.className === "squiggly-error" && m.range.startColumn === 8)'), true);
+        await evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
+      }
+    }
+    await evaluate('fixture.transportFailure=null');
+    await click('Run'); await wait('document.body.innerText.includes("SIMULATED wrapper error")');
+    milestones.push({ phase: 'Run/Submit transport failures retain prior compiler markers' });
     const screenshot = await call('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(output, 'compiler-simulated.png'), Buffer.from(screenshot.data, 'base64'));
     await toggle(false);
     assert.equal(await evaluate('document.body.innerText.includes("SIMULATED wrapper error")'), true);
@@ -163,6 +211,11 @@ const fixture = () => {
     await wait('fixture.jobs.length > fixture.beforeOffRun && fixture.jobs.at(-1).finished');
     assert.deepEqual(await evaluate('inlineMarkers()'), []);
     assert.equal(await evaluate('fixture.workers.filter(w=>!w.terminated).length'), 0);
+    await evaluate('fixture.beforeOffRun=fixture.jobs.length'); await click('Submit');
+    await wait('fixture.jobs.length > fixture.beforeOffRun && fixture.jobs.at(-1).finished');
+    assert.deepEqual(await evaluate('inlineMarkers()'), []);
+    assert.equal(await evaluate('fixture.workers.filter(w=>!w.terminated).length'), 0);
+    await evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
     await toggle(true); await wait('fixture.messages.at(-1)?.version === editorModel().getVersionId()');
     assert.equal(await evaluate('inlineMarkers().some(m=>m.className === "squiggly-error")'), false);
     await source('pub fn solve(x: i32) -> i32 { x + 0 }'); assert.equal(await evaluate('inlineMarkers().some(m=>m.className === "squiggly-error")'), false);
@@ -213,7 +266,7 @@ const fixture = () => {
         let id = 0;
         const parse = source => new Promise((resolve,reject) => {
           const timer=setTimeout(()=>reject(new Error('benchmark worker timeout')),10000);
-          worker.onmessage=({data})=>{clearTimeout(timer);resolve(data)};
+          worker.onmessage=({data})=>{if(data.ready)return;clearTimeout(timer);resolve(data)};
           worker.onerror=()=>{clearTimeout(timer);reject(new Error('benchmark worker failed'))};
           worker.postMessage({source,language,id:++id,editor:99,session:99,revision:id,version:id});
         });

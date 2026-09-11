@@ -168,7 +168,8 @@ export const useSession = createWithEqualityFn<Session>()((set, get) => ({
         const request: CompilerRequest = { problem, language, source,
             editor: state.diagnosticEditor, generation: state.diagnosticGeneration,
             revision: state.diagnosticRevision, request: state.diagnosticRequestId + 1 };
-        set({ compilerRequest: request, compilerError: null, diagnosticRequestId: request.request });
+        // Keep the last result until compilation replaces it; transport failures are not new diagnostics.
+        set({ compilerRequest: request, diagnosticRequestId: request.request });
         return request;
     },
     finishCompilerCheck: (request, error) => {

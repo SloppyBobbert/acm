@@ -91,7 +91,8 @@ The following inline behavior applies only while **Inline code checks** is on. I
 
 - Run syntax checks in a browser Web Worker with a WebAssembly parser, such as [web-tree-sitter](https://github.com/tree-sitter/tree-sitter/blob/master/lib/binding_web/README.md), and C++/Rust grammars. Load only the selected language grammar.
 - Check after a short typing pause. Mark parser errors in the editor without sending source to the API for these checks.
-- After Run or Submit, show the existing compiler diagnostics as inline markers. Keep the result panel for accessible messages and compiler errors without a source location.
+- After Run or Submit, show the existing compiler diagnostics as inline markers. Keep the result panel for accessible messages and compiler errors without a source location. Both paths finish their diagnostic check in `finally`; HTTP, JSON, polling, and network failures retain the prior compiler markers rather than replacing them with no result. Stale completions are still rejected.
+- Keep diagnostics status and the Vim bar inside one footer row. The editor retains its `minmax(0,1fr)` row with either setting off or both on.
 - Associate results with the submitted source and language. Clear markers when either changes, and ignore late results for an older editor version.
 - Keep syntax and compiler markers separate. A parser failure must not prevent editing or submission.
 
@@ -99,7 +100,7 @@ The following inline behavior applies only while **Inline code checks** is on. I
 
 Browser syntax checks are advisory. They do not replace compilation, validate test answers, or enforce execution limits. C++ preprocessing and macros can differ from the parser's view. Rust type, trait, and borrow checks still require the compiler.
 
-Compiler checks remain on the isolated runner after Run or Submit. This design adds no persistent rust-analyzer or clangd process and no compiler request on each keystroke. Raw asset sizes and local parse timings are recorded below. Browser memory was not measured; no memory-reduction claim is made. A two-second main-thread watchdog includes worker startup/asset loading, so slow downloads may report an advisory failure; edit or toggle to retry.
+Compiler checks remain on the isolated runner after Run or Submit. This design adds no persistent rust-analyzer or clangd process and no compiler request on each keystroke. Raw asset sizes and local parse timings are recorded below. Browser memory was not measured; no memory-reduction claim is made. Initialization shows “Loading syntax checks...” and has a ten-second deadline for worker startup and asset loading. A load timeout gets one automatic retry per active diagnostic controller; a second load timeout reports an advisory failure. Once the worker signals that assets are ready, parsing has a separate two-second deadline. Parse timeouts do not retry automatically. Editing or toggling can start another check; editing and Run/Submit remain available throughout.
 
 ## Acceptance checks
 
@@ -121,7 +122,7 @@ Compiler checks remain on the isolated runner after Run or Submit. This design a
 - Syntax identity includes editor instance, opt-in session, revision, language, Monaco model version and request sequence. Store mutations invalidate revisions even for identical-source history restoration. Compiler requests share a latest-request sequence across Run and Submit, and capture problem/language/source/revision/session/editor identity at dispatch. Late results cannot restore markers after edits, navigation or off/on cycles. Turning on does not replay old compiler results.
 - Separate `submission-syntax` and `submission-compiler` owners; opt-out synchronously clears both, cancels timers and terminates the worker. Worker termination disposes its WASM realm; each parse deletes its tree/cursor, and parser failure deletes the parser. Model disposal is performed with a captured model reference before editor disposal.
 - Syntax markers are advisory warnings, capped at 100. String-input Tree-sitter offsets are verified UTF-16 units, then bounded through Monaco positions. Compiler JSON is validated before either panel or marker rendering. Result panels show at most 500 diagnostics plus an omission note; inline compiler markers have a separate 100-marker limit. Wrapper/source-less errors stay in the panel. Non-ASCII or tab-containing compiler lines use whole-line ranges rather than assuming byte/display-column equivalence.
-- Sources above 200 KiB skip syntax parsing. Worker/asset failure or a two-second deadline reports non-blocking status; editing and Run/Submit remain usable. No compiler/API request is made by syntax checking. The worker loads only the selected language grammar.
+- Sources above 200 KiB skip syntax parsing. Worker/asset failure, exhausted initialization retry, or a two-second parse timeout reports non-blocking status; editing and Run/Submit remain usable. No compiler/API request is made by syntax checking. The worker loads only the selected language grammar.
 
 ### Repeatable checks
 
@@ -129,10 +130,11 @@ See [testing instructions](testing.md#inline-editor-diagnostics) for the exact p
 
 Verified locally:
 
-- `node --test lilith/tests/*.test.cjs`: 31 passing tests, including six focused diagnostic tests (effect setup/cleanup replay and disposed-model cleanup included). Existing Rust draft persistence test now also checks default-off migration.
+- `node --test lilith/tests/*.test.cjs`: 34 passing tests, including nine focused diagnostic tests (effect setup/cleanup replay and disposed-model cleanup included). Existing Rust draft persistence test now also checks default-off migration.
 - `corepack yarn lint` and `corepack yarn build` in `lilith`: pass, Next.js 12.3.7 unchanged. Production browser build explicitly supplies the public API/WS URLs.
 - `SQLX_OFFLINE=true cargo test --workspace --locked`: pass; native isolation-only coverage remains gated by the platform as before.
 - Production Chrome: actual C++/Rust syntax errors and corrections, UTF-16 Unicode ranges, default-off/no workers or parser asset requests, keyboard Space toggle, persistence across reload, simulated compiler errors via both buttons, wrapper panel retention, same-source history and off/on/concurrent stale-response rejection, missing-worker URL failure, oversized source, navigation and teardown. Narrow-screen screenshots inspected. No uncaught browser exceptions.
+- Scoped follow-up: fake-timer tests cover the ten-second initialization deadline, one retry, stale worker replies, and the separate two-second parse deadline. Handler tests cover HTTP, network, JSON, and polling failures. Production-browser checks cover delayed first initialization, all Vim/checks combinations, retained markers after simulated HTTP/network failures, and Run/Submit with checks off. These fixtures do not establish native compiler acceptance.
 - `git diff --check`: pass. Independent review remains a separate gate.
 
 ### Assets and measured timings
