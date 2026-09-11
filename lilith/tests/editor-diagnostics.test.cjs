@@ -29,6 +29,19 @@ test('payload validation and bounded compiler coordinates, including Unicode and
   assert.equal(helpers.compilerMarkers(JSON.stringify(Array(200).fill(diagnostic(1, 1))), 'x').length, 100);
 });
 
+test('result panels cap diagnostics separately from markers and show truncation', () => {
+  const diagnostic = { line: 1, col: 1, diagnostic_type: 'Error', message: 'bad' };
+  assert.equal(helpers.parseDiagnostics(JSON.stringify(Array(500).fill(diagnostic))).length, 500);
+  const payload = JSON.stringify(Array(5000).fill(diagnostic));
+  const parsed = helpers.parseDiagnostics(payload);
+  assert.equal(parsed.length, 501);
+  assert.equal(parsed.at(-1).diagnostic_type, 'Note');
+  assert.equal(parsed.at(-1).line, 0);
+  assert.match(parsed.at(-1).message, /4500 additional diagnostics omitted/);
+  assert.equal(helpers.compilerMarkers(payload, 'x').length, 100);
+  assert.equal(helpers.parseDiagnostics(JSON.stringify([...Array(500).fill(diagnostic), null])), null);
+});
+
 test('persisted default off and compiler identities reject restoration, off/on, navigation and concurrent Run/Submit', () => {
   const storage = new Map();
   const localStorage = { getItem: k => storage.get(k) ?? null, setItem: (k,v) => storage.set(k,v), removeItem: k => storage.delete(k) };
