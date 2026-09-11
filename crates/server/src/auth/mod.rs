@@ -173,3 +173,36 @@ where
         Ok(token_data.claims)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_tokens_round_trip_and_reject_wrong_keys() {
+        let keys = Keys::new(b"test-only-session-signing-key");
+        let exp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as usize
+            + 3600;
+        let token = keys
+            .encode_token(Claims {
+                user_id: 42,
+                auth: Auth::Member,
+                exp,
+            })
+            .unwrap();
+        let decoded =
+            jsonwebtoken::decode::<Claims>(&token, &keys.decoding, &Validation::default()).unwrap();
+        assert_eq!(decoded.claims.user_id, 42);
+        assert!(matches!(decoded.claims.auth, Auth::Member));
+        assert_eq!(decoded.claims.exp, exp);
+        assert!(jsonwebtoken::decode::<Claims>(
+            &token,
+            &DecodingKey::from_secret(b"wrong-test-key"),
+            &Validation::default(),
+        )
+        .is_err());
+    }
+}
