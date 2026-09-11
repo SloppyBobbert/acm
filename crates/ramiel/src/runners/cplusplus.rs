@@ -633,7 +633,23 @@ fn parse_cplusplus_error(err: String, truncated: bool) -> RunnerError {
     for line in err.lines() {
         match diagnostic_from_str(line) {
             Ok(Some(diagnostic)) => diagnostics.push(diagnostic),
-            Ok(None) => {}
+            Ok(None) => {
+                let diagnostic_type = if line.contains("error:") {
+                    DiagnosticType::Error
+                } else if line.contains("warning:") {
+                    DiagnosticType::Warning
+                } else if line.contains("note:") {
+                    DiagnosticType::Note
+                } else {
+                    continue;
+                };
+                diagnostics.push(Diagnostic {
+                    line: 0,
+                    col: 0,
+                    message: line.to_owned(),
+                    diagnostic_type,
+                });
+            }
             Err(e) => {
                 return e;
             }
@@ -692,6 +708,20 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(matches!(diagnostic.diagnostic_type, DiagnosticType::Error));
+    }
+
+    #[test]
+    fn mixed_compiler_diagnostics_keep_linker_errors() {
+        let RunnerError::CompilationError { diagnostics } = parse_cplusplus_error(
+            "/tmp/job/implementation.cpp:40:1: warning: unused variable\nwasm-ld: error: undefined symbol: missing\nclang++: error: linker command failed".into(), false,
+        ) else { panic!("expected compiler diagnostics") };
+        assert_eq!(diagnostics.len(), 3);
+        assert_eq!(diagnostics[0].line, 1);
+        assert!(diagnostics[1..]
+            .iter()
+            .all(|item| item.line == 0 && matches!(item.diagnostic_type, DiagnosticType::Error)));
+        assert!(diagnostics[1].message.contains("undefined symbol"));
+        assert!(diagnostics[2].message.contains("linker command failed"));
     }
 
     #[tokio::test]

@@ -32,6 +32,7 @@ export function SubmissionTime({ time }: { time: string }): JSX.Element {
 }
 
 type Submission = {
+  language?: "cpp" | "rust";
   id: number;
   problem_id: number;
   problem_title: string;
@@ -63,6 +64,7 @@ function SubmissionEntry({
   problem_title,
   time,
   code,
+  language = "cpp",
 }: Submission): JSX.Element {
   let compact = Intl.NumberFormat('en', { notation: "compact" }).format(runtime) + " fuel";
   let long = Intl.NumberFormat('en', { notation: "standard" }).format(runtime) + " fuel";
@@ -102,7 +104,7 @@ function SubmissionEntry({
         </div>
       </div>
 
-      <SourceCodeBlock text={code} />
+      <SourceCodeBlock text={code} language={language} />
     </article>
   );
 }

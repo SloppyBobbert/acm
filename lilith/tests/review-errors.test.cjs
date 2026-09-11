@@ -46,3 +46,17 @@ test('Rust template errors have a fallback, and successful templates are unchang
   }
   assert.equal(await vm.runInNewContext(code, { fetch: async () => new Response(JSON.stringify('fn add() {}')) }), 'fn add() {}');
 });
+
+test('public user entries pass Rust or legacy C++ to the source block', () => {
+  const fn = sourceNode('pages/user/[username].tsx', n => ts.isFunctionDeclaration(n) && n.name?.text === 'SubmissionEntry');
+  const code = ts.transpileModule(`${fn}; SubmissionEntry(input)`, { compilerOptions: { target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.React } }).outputText;
+  const SourceCodeBlock = () => null;
+  for (const language of ['rust', undefined]) {
+    const element = vm.runInNewContext(code, {
+      React: require('react'), SourceCodeBlock, Link: () => null, SubmissionTime: () => null,
+      input: { id: 1, success: true, runtime: 4, problem_title: 'test', time: '2026-01-01', code: 'source', language },
+    });
+    const block = element.props.children.find(child => child?.type === SourceCodeBlock);
+    assert.equal(block.props.language, language ?? 'cpp');
+  }
+});
