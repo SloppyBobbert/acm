@@ -147,7 +147,13 @@ const fixture = () => {
     const payload = JSON.stringify([{ line: 1, col: 8, diagnostic_type: 'Error', message: 'SIMULATED compiler error' }, { line: 0, col: 0, diagnostic_type: 'Error', message: 'SIMULATED wrapper error' }]);
     await evaluate(`fixture.nextError=${JSON.stringify(payload)}`);
     await click('Show console'); await wait('Array.from(document.querySelectorAll("button")).some(b=>b.textContent.trim()==="Run")');
-    await click('Run'); await wait('inlineMarkers().some(m=>m.className === "squiggly-error")');
+    await evaluate(`fixture.nextError=JSON.stringify(Array(5000).fill({line:1,col:1,diagnostic_type:'Error',message:'SIMULATED repeated diagnostic'}))`);
+    await click('Run'); await wait('document.body.innerText.includes("4500 additional diagnostics omitted")');
+    assert.equal(await evaluate('Array.from(document.querySelectorAll("code")).filter(e=>e.textContent === "SIMULATED repeated diagnostic").length'), 500);
+    assert.ok(await evaluate('inlineMarkers().filter(m=>m.className === "squiggly-error").length <= 100'));
+    milestones.push({ phase: 'Simulated compiler panel cap', diagnostics: 500, omitted: 4500 });
+    await evaluate(`fixture.nextError=${JSON.stringify(payload)}`);
+    await click('Run'); await wait('inlineMarkers().some(m=>m.className === "squiggly-error" && m.range.startColumn === 8)');
     assert.equal(await evaluate('inlineMarkers().find(m=>m.className === "squiggly-error").range.startColumn'), 8);
     assert.equal(await evaluate('document.body.innerText.includes("SIMULATED wrapper error")'), true);
     const screenshot = await call('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(output, 'compiler-simulated.png'), Buffer.from(screenshot.data, 'base64'));
