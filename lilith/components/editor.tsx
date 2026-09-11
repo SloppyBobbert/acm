@@ -4,6 +4,7 @@ import * as monaco from "monaco-editor";
 // @ts-ignore
 import { initVimMode } from "monaco-vim";
 import { useStore } from "../utils/state";
+import EditorDiagnostics from "./editor-diagnostics";
 
 type EditorProps = {
     language: "cpp" | "rust" | "markdown";
@@ -14,6 +15,7 @@ type EditorProps = {
     className?: string;
     hideScrollbars?: boolean;
     value: string;
+    diagnosticProblem?: number;
 };
 
 export default function Editor({
@@ -22,6 +24,7 @@ export default function Editor({
     language,
     className,
     hideScrollbars,
+    diagnosticProblem,
 }: EditorProps): JSX.Element {
     const [editor, setEditor] = useState<
         monaco.editor.IStandaloneCodeEditor | undefined
@@ -95,10 +98,9 @@ export default function Editor({
         }
 
         return () => {
+            const model = editor.getModel();
             editor.dispose();
             vimMode?.dispose();
-
-            const model = editor.getModel();
             if (model) {
                 model.dispose();
             }
@@ -112,7 +114,11 @@ export default function Editor({
     return (
         <div className="h-full grid grid-rows-full-min grid-cols-full">
             <div ref={editorRef} />
-            {vimEnabled && <div className="border-neutral-300 dark:border-neutral-700 border-t font-mono" ref={statusBarRef} />}
+            <div>
+                {editor && diagnosticProblem !== undefined && language !== "markdown" &&
+                    <EditorDiagnostics editor={editor} problem={diagnosticProblem} language={language} />}
+                {vimEnabled && <div className="border-neutral-300 dark:border-neutral-700 border-t font-mono" ref={statusBarRef} />}
+            </div>
         </div>
     );
 }

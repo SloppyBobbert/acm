@@ -11,7 +11,11 @@ function loadStore(storage) {
   const previous = global.localStorage;
   global.localStorage = storage;
   try {
-    const context = { exports: {}, require, console };
+    const diagnostics = { exports: {} };
+    vm.runInNewContext(ts.transpileModule(readFileSync(path.join(root, 'utils/editor-diagnostics.ts'), 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    }).outputText, diagnostics);
+    const context = { exports: {}, require: name => name === './editor-diagnostics' ? diagnostics.exports : require(name), console };
     const code = ts.transpileModule(readFileSync(path.join(root, 'utils/state.ts'), 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
     }).outputText;
@@ -26,6 +30,7 @@ test('legacy C++ drafts survive switching, reload, and loading old submissions',
   const data = new Map([['data', JSON.stringify({ state: { problemImpls: { 1: 'old C++' } }, version: 0 })]]);
   const storage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
   let { useStore, getProblemImpl } = loadStore(storage);
+  assert.equal(useStore.getState().inlineCodeChecks, false);
   assert.equal(getProblemImpl(useStore.getState(), 1), 'old C++');
   useStore.getState().setProblemLanguage(1, 'rust');
   assert.equal(getProblemImpl(useStore.getState(), 1), undefined);

@@ -32,6 +32,8 @@ export default function CodeRunner(): JSX.Element {
                 return;
             }
 
+            const request = useSession.getState().beginCompilerCheck(id, language, implementation);
+            let compilerError = useSession.getState().compilerError;
             setLoading(true);
 
             try {
@@ -57,6 +59,8 @@ export default function CodeRunner(): JSX.Element {
                 console.log(job);
                 let [data, err] = await monitorJob(job, (n) => setQueuePosition(n));
 
+                compilerError = err ?? data?.error ?? null;
+
                 if (data) {
                     setTimeout(() => {
                         setSubmissionShown(true);
@@ -73,6 +77,7 @@ export default function CodeRunner(): JSX.Element {
                 setError("Network error.", true);
             }
             finally {
+                useSession.getState().finishCompilerCheck(request, compilerError);
                 setLoading(false);
             }
         };

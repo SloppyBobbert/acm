@@ -46,6 +46,8 @@ export default function InputTester() {
             return;
         }
 
+        const request = useSession.getState().beginCompilerCheck(problem_id!, language, implementation);
+        let compilerError = useSession.getState().compilerError;
         setLoading(true);
         try {
             let res = await fetch(api_url("/run/custom"), {
@@ -72,6 +74,8 @@ export default function InputTester() {
 
             let [data, err] = await monitorJob(job, (n) => setQueuePosition(n));
 
+            compilerError = err ?? null;
+
             if (err) {
                 setResultError(err);
                 setTestResult(null);
@@ -87,6 +91,7 @@ export default function InputTester() {
             setError("Network error.", true);
         }
         finally {
+            useSession.getState().finishCompilerCheck(request, compilerError);
             setLoading(false);
         }
     };
