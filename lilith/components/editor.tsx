@@ -6,7 +6,7 @@ import { initVimMode } from "monaco-vim";
 import { useStore } from "../utils/state";
 
 type EditorProps = {
-    language: "cpp" | "markdown";
+    language: "cpp" | "rust" | "markdown";
     onChange: (
         text: string,
         event: monaco.editor.IModelContentChangedEvent

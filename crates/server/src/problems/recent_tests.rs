@@ -56,6 +56,14 @@ pub async fn recent_tests(
     Ok(Json(tests))
 }
 
+#[derive(FromRow)]
+struct RecentTest {
+    #[sqlx(flatten)]
+    test: TestResult,
+    language: shared::models::language::Language,
+    runtime_multiplier: Option<f64>,
+}
+
 pub async fn recent_tests_test(
     claims: Claims,
     Extension(pool): Extension<SqlitePool>,
@@ -63,14 +71,12 @@ pub async fn recent_tests_test(
 ) -> Result<Json<TestResult>, ServerError> {
     claims.validate_logged_in()?;
 
-    let (runtime_multiplier,): (Option<f64>,) =
-        sqlx::query_as(r#"SELECT runtime_multiplier FROM problems WHERE id = ?"#)
-            .bind(problem_id)
-            .fetch_one(&pool)
-            .await
-            .map_err(|_| ServerError::NotFound)?;
-
-    let mut test: TestResult = sqlx::query_as(
+    // Read result and language in one database snapshot, not two latest lookups.
+    let RecentTest {
+        mut test,
+        language,
+        runtime_multiplier,
+    } = sqlx::query_as::<_, RecentTest>(
         r#"
         SELECT
             test_results.id as id,
@@ -82,10 +88,14 @@ pub async fn recent_tests_test(
             tests.input as input,
             tests.expected_output as expected_output,
             tests.test_number as test_number,
-            tests.hidden as hidden
+            tests.hidden as hidden,
+            submissions.language as language,
+            problems.runtime_multiplier as runtime_multiplier
         FROM
             test_results INNER JOIN tests
             ON test_results.test_id = tests.id
+            INNER JOIN submissions ON submissions.id = test_results.submission_id
+            INNER JOIN problems ON problems.id = submissions.problem_id
         WHERE
             test_results.submission_id = (
                 SELECT id
@@ -111,6 +121,58 @@ pub async fn recent_tests_test(
     })?;
 
     test.adjust_runtime(runtime_multiplier);
+    test.max_fuel = language.fuel_limit(test.max_fuel);
 
     Ok(Json(test))
+}
+
+#[cfg(test)]
+mod regression_tests {
+    use super::*;
+    use crate::auth::Auth;
+
+    #[tokio::test]
+    async fn result_and_budget_belong_to_the_same_submission() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("../../migrations").run(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO users (id,name,username,discord_id) VALUES (1,'test','test','test')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO problems (id,title,description,runner,reference,template,runtime_multiplier) VALUES (1,'test','','','','',2)").execute(&pool).await.unwrap();
+        let input =
+            r#"{"name":"add","arguments":[{"Int":{"Single":1}}],"return_type":{"Int":"Single"}}"#;
+        let output = r#"{"Int":{"Single":1}}"#;
+        sqlx::query("INSERT INTO tests (id,problem_id,test_number,input,expected_output,max_runtime) VALUES (1,1,0,?,?,10)")
+            .bind(input).bind(output).execute(&pool).await.unwrap();
+        let mut previous = None;
+        for (id, language, budget) in [(1i64, "cpp", 20), (2, "rust", 100_000), (3, "cpp", 20)] {
+            sqlx::query("INSERT INTO submissions (id,problem_id,user_id,success,runtime,code,language,time) VALUES (?,1,1,1,1,'test',?,?)")
+                .bind(id).bind(language).bind(format!("2026-01-0{id} 00:00:00"))
+                .execute(&pool).await.unwrap();
+            sqlx::query("INSERT INTO test_results (id,submission_id,test_id,runtime,output,success) VALUES (?,?,1,1,?,1)")
+                .bind(id).bind(id).bind(output).execute(&pool).await.unwrap();
+            let Json(result) = recent_tests_test(
+                Claims {
+                    user_id: 1,
+                    auth: Auth::Member,
+                    exp: 0,
+                },
+                Extension(pool.clone()),
+                Path((1, 0)),
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.id, id);
+            assert_eq!(result.max_fuel, Some(budget));
+            if let Some((old_result, old_budget)) = previous {
+                let old_result: TestResult = old_result;
+                assert_eq!(old_result.max_fuel, Some(old_budget));
+                assert_ne!(old_result.id, result.id);
+            }
+            previous = Some((result, budget));
+        }
+    }
 }

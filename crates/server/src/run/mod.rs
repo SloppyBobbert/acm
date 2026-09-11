@@ -33,7 +33,31 @@ use crate::{
 
 mod custom;
 mod generate_tests;
+#[cfg(test)]
+mod rust_tests;
 mod submit;
+
+pub(crate) async fn rust_signature(
+    pool: &SqlitePool,
+    problem_id: i64,
+    custom: Option<&wasm_memory::WasmFunctionCall>,
+) -> Result<shared::models::language::RustSignature, ServerError> {
+    let rows: Vec<(String,)> =
+        sqlx::query_as("SELECT input FROM tests WHERE problem_id = ? ORDER BY test_number")
+            .bind(problem_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|_| ServerError::InternalError)?;
+    let calls = rows
+        .into_iter()
+        .map(|(input,)| serde_json::from_str::<wasm_memory::WasmFunctionCall>(&input))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| ServerError::InternalError)?;
+    shared::models::language::RustSignature::from_calls(calls.iter())?;
+    Ok(shared::models::language::RustSignature::from_calls(
+        calls.iter().chain(custom),
+    )?)
+}
 
 pub type JobQueueItem = Box<dyn Queueable>;
 pub type JobQueue = mpsc::UnboundedSender<(u64, JobQueueItem)>;

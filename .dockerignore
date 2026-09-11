@@ -1,5 +1,7 @@
 .git
 .local
+.pi
+.pi-lens.json
 .next
 target
 db.sqlite*

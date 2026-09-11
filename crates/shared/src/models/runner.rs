@@ -36,6 +36,9 @@ pub struct CustomInputResponse {
 #[derive(Deserialize, Serialize, Error, Debug, Clone, PartialEq)]
 #[serde(tag = "type")]
 pub enum RunnerError {
+    #[error("Unsupported problem signature: {message}")]
+    UnsupportedSignature { message: String },
+
     #[error("{diagnostics:?}")]
     CompilationError { diagnostics: Vec<Diagnostic> },
 

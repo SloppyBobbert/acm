@@ -3,7 +3,7 @@ import { useSWRConfig } from "swr";
 import { ProblemIDContext } from ".";
 import { api_url } from "../../utils/fetcher";
 import { JobStatus, monitorJob } from "../../utils/job";
-import { Submission, useSession, useStore } from "../../utils/state";
+import { getProblemImpl, Submission, useSession, useStore } from "../../utils/state";
 import EditorPreferences from "../editor-preferences";
 import LoadingButton from "../loading-button";
 import Modal from "../modal";
@@ -18,8 +18,9 @@ export default function CodeRunner(): JSX.Element {
     function SubmitButton(): JSX.Element {
         const id = useContext(ProblemIDContext)!;
         const implementation = useStore(
-            (state) => id && state.problemImpls[id]
+            (state) => id ? getProblemImpl(state, id) : undefined
         );
+        const language = useStore(state => state.problemLanguages[id] ?? "cpp");
         const setError = useSession((session) => session.setError);
         const [loading, setLoading] = useState(false);
         const [queuePosition, setQueuePosition] = useState(0);
@@ -43,9 +44,15 @@ export default function CodeRunner(): JSX.Element {
                     body: JSON.stringify({
                         problem_id: id,
                         implementation,
+                        language,
                     }),
                 });
 
+                if (!res.ok) {
+                    const error = await res.json();
+                    setError(error.message ?? error.error ?? "Submission was rejected.", true);
+                    return;
+                }
                 let job: JobStatus<Submission, string> = await res.json();
                 console.log(job);
                 let [data, err] = await monitorJob(job, (n) => setQueuePosition(n));

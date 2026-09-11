@@ -5,7 +5,7 @@ import { createContext } from "react";
 import useSWR from "swr";
 import { Competition } from "../../pages/competitions";
 import { api_url, fetcher } from "../../utils/fetcher";
-import { useStore } from "../../utils/state";
+import { getProblemImpl, Language, useStore } from "../../utils/state";
 import Tabbed from "../tabbed";
 import CodeRunner from "./code-runner";
 import Description from "./description";
@@ -18,9 +18,9 @@ export const ProblemContext = createContext<Problem | undefined>(undefined);
 export const ProblemIDContext = createContext<number | undefined>(undefined);
 
 type ProblemViewProps = {
-    id?: number,
-    competitionId?: number,
-    hideEditorScrollbars?: boolean,
+    id?: number;
+    competitionId?: number;
+    hideEditorScrollbars?: boolean;
 };
 
 type Problem = {
@@ -31,41 +31,100 @@ type Problem = {
     competition_id?: number;
 };
 
-export default function ProblemView({ id, hideEditorScrollbars }: ProblemViewProps): JSX.Element {
-    const { data, error } = useSWR<Problem>(
-        id ? api_url(`/problems/${id}`) : null,
-        fetcher
+async function rustTemplate(url: string): Promise<string> {
+    const response = await fetch(url, { credentials: "include" });
+    const body = await response.json();
+    if (!response.ok)
+        throw new Error(
+            body.message ?? body.error ?? "Could not load the Rust template.",
+        );
+    return body;
+}
+
+function ProblemEditorWrapper({
+    id,
+    template,
+    hideEditorScrollbars,
+}: {
+    id?: number;
+    template?: string;
+    hideEditorScrollbars?: boolean;
+}) {
+    const language = useStore((state) =>
+        id ? (state.problemLanguages[id] ?? "cpp") : "cpp",
     );
-
-    function ProblemEditorWrapper(): JSX.Element {
-        // bad
-        let content =
-            useStore((state) =>
-                id ? state.problemImpls[id] : undefined
-            ) ??
-            data?.template ??
-            "";
-
-        const setProblemImpl = useStore((state) => state.setProblemImpl);
-
-        return (
-            <div className="bg-white dark:bg-neutral-900 h-full ring-1 md:ring-0 ring-neutral-300 dark:ring-neutral-700">
+    const saved = useStore((state) =>
+        id ? getProblemImpl(state, id, language) : undefined,
+    );
+    const setProblemImpl = useStore((state) => state.setProblemImpl);
+    const setLanguage = useStore((state) => state.setProblemLanguage);
+    const { data, error } = useSWR<string>(
+        id && language === "rust"
+            ? api_url(`/problems/${id}/rust-template`)
+            : null,
+        rustTemplate,
+        { shouldRetryOnError: false },
+    );
+    const content = saved ?? (language === "rust" ? data : template) ?? "";
+    return (
+        <div className="bg-white dark:bg-neutral-900 h-full min-h-0 flex flex-col ring-1 md:ring-0 ring-neutral-300 dark:ring-neutral-700">
+            <label className="p-2 border-b border-neutral-300 dark:border-neutral-700">
+                Language{" "}
+                <select
+                    aria-label="Submission language"
+                    value={language}
+                    onChange={(event) =>
+                        id && setLanguage(id, event.target.value as Language)
+                    }
+                    className="bg-white dark:bg-neutral-900"
+                >
+                    <option value="cpp">C++</option>
+                    <option value="rust">Rust (integer signatures)</option>
+                </select>
+            </label>
+            {language === "rust" && (
+                <p className="px-2 text-sm">
+                    Rust standard library only. Arguments and results must be
+                    scalar i32 or i64 values.
+                </p>
+            )}
+            {error && (
+                <p role="alert" className="p-2 text-red-600">
+                    {error.message}
+                </p>
+            )}
+            <div className="flex-1 min-h-0">
                 <Editor
-                    language="cpp"
+                    key={`${id}:${language}`}
+                    language={language}
                     value={content}
                     hideScrollbars={hideEditorScrollbars}
-                    onChange={(text, _event) => {
-                        if (id) setProblemImpl(id, text);
+                    onChange={(text) => {
+                        if (id) setProblemImpl(id, text, language);
                     }}
                 />
             </div>
-        );
-    }
+        </div>
+    );
+}
 
-    function BackToCompetition({ competitionId }: { competitionId?: number }): JSX.Element {
+export default function ProblemView({
+    id,
+    hideEditorScrollbars,
+}: ProblemViewProps): JSX.Element {
+    const { data, error } = useSWR<Problem>(
+        id ? api_url(`/problems/${id}`) : null,
+        fetcher,
+    );
+
+    function BackToCompetition({
+        competitionId,
+    }: {
+        competitionId?: number;
+    }): JSX.Element {
         const { data, error } = useSWR<Competition>(
             competitionId ? api_url(`/competitions/${competitionId}`) : null,
-            fetcher
+            fetcher,
         );
 
         if (!competitionId || error || !data) return <></>;
@@ -88,7 +147,8 @@ export default function ProblemView({ id, hideEditorScrollbars }: ProblemViewPro
             <div className="h-full flex flex-col items-center justify-center gap-2 bg-white dark:bg-black p-8 text-center">
                 <h1 className="text-2xl font-bold">Could not load problem</h1>
                 <p className="max-w-md text-neutral-600 dark:text-neutral-400">
-                    Check that the API is running and that this problem is still available.
+                    Check that the API is running and that this problem is still
+                    available.
                 </p>
             </div>
         );
@@ -103,7 +163,11 @@ export default function ProblemView({ id, hideEditorScrollbars }: ProblemViewPro
 
                 <div className="grid grid-rows-[min-content_min-content_40vh_minmax(0,1fr)] md:grid-cols-[400px_minmax(0,1fr)] lg:grid-cols-[500px_minmax(0,1fr)] md:grid-rows-full-min h-full">
                     <div className="md:border-r border-neutral-300 dark:border-neutral-700 row-span-2 flex flex-col border-b md:border-b-0">
-                        {data?.competition_id && <BackToCompetition competitionId={data?.competition_id} />}
+                        {data?.competition_id && (
+                            <BackToCompetition
+                                competitionId={data?.competition_id}
+                            />
+                        )}
 
                         <TestContainer />
 
@@ -117,7 +181,11 @@ export default function ProblemView({ id, hideEditorScrollbars }: ProblemViewPro
                         </Tabbed>
                     </div>
 
-                    <ProblemEditorWrapper />
+                    <ProblemEditorWrapper
+                        id={id}
+                        template={data?.template}
+                        hideEditorScrollbars={hideEditorScrollbars}
+                    />
                     <CodeRunner />
                 </div>
             </ProblemContext.Provider>

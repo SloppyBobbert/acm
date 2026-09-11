@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 
-export default function SourceCodeBlock({ text }: { text: string }): JSX.Element {
+export default function SourceCodeBlock({ text, language = "cpp" }: { text: string, language?: "cpp" | "rust" }): JSX.Element {
   const preRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
@@ -13,11 +13,11 @@ export default function SourceCodeBlock({ text }: { text: string }): JSX.Element
       });
     }
     highlight();
-  }, [preRef])
+  }, [text, language])
 
   return (
     <pre
-      lang="cpp"
+      lang={language}
       ref={preRef}
       className="rounded-md bg-blue-50 bg-neutral-100 dark:bg-stone-900 p-2 overflow-auto border border-blue-200 dark:border-slate-700"
     >

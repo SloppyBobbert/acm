@@ -134,7 +134,7 @@ const SubmissionPage: NextPage = () => {
                     </span>
                 </div>
 
-                <SourceCodeBlock text={submission.code} />
+                <SourceCodeBlock text={submission.code} language={submission.language ?? "cpp"} />
 
                 <div className="mt-auto p-4 rounded-md bg-yellow-300 border-yellow-500 border text-yellow-900">
                     <h1 className="font-bold text-xl mb-2">{"Warning"}</h1>
@@ -144,7 +144,7 @@ const SubmissionPage: NextPage = () => {
                 <a href={`/problems/${submission.problem_id}`}
                     onClick={event => {
                         event.preventDefault();
-                        setProblemImpl(submission.problem_id, submission.code);
+                        setProblemImpl(submission.problem_id, submission.code, submission.language ?? "cpp");
                         router.push(`/problems/${submission.problem_id}`);
                     }}
                     className="rounded-full p-2 bg-blue-600 hover:bg-blue-500 text-blue-50 transition-colors text-center">

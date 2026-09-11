@@ -6,6 +6,8 @@ use crate::models::test::Test;
 
 #[derive(Deserialize, Serialize)]
 pub struct SubmitJob {
+    #[serde(default)]
+    pub language: super::language::Language,
     pub problem_id: i64,
     pub user_id: i64,
     pub implementation: String,
@@ -23,6 +25,8 @@ pub struct GenerateTestsJob {
 // TODO: Make naming less bad
 #[derive(Clone, Deserialize, Serialize)]
 pub struct CustomInputJob {
+    #[serde(default)]
+    pub language: super::language::Language,
     pub problem_id: i64,
     pub user_id: i64,
     pub reference: String,

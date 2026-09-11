@@ -283,6 +283,46 @@ impl WasmFunctionCall {
         }
     }
 
+    /// Calls the fixed Rust export without C++ allocation or container layouts.
+    pub fn call_integers<S>(
+        self,
+        store: &mut Store<S>,
+        instance: &Instance,
+    ) -> Result<(FunctionValue, u64)> {
+        let params = self
+            .arguments
+            .iter()
+            .map(|arg| match arg {
+                FunctionValue::Int(ContainerVariant::Single(value)) => Ok(Val::I32(*value)),
+                FunctionValue::Long(ContainerVariant::Single(value)) => Ok(Val::I64(*value)),
+                _ => anyhow::bail!("Rust supports only scalar i32 and i64 arguments"),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let result = match self.return_type {
+            FunctionType::Int(ContainerVariantType::Single) => Val::I32(0),
+            FunctionType::Long(ContainerVariantType::Single) => Val::I64(0),
+            _ => anyhow::bail!("Rust supports only scalar i32 and i64 results"),
+        };
+        // Rust cdylibs can have a reactor initializer. Count its work against the limit.
+        let before = store.get_fuel()?;
+        if instance.get_export(&mut *store, "_initialize").is_some() {
+            instance
+                .get_typed_func::<(), ()>(&mut *store, "_initialize")?
+                .call(&mut *store, ())?;
+        }
+        let function = instance
+            .get_func(&mut *store, "acm_entry")
+            .ok_or_else(|| FunctionError::RequiredFunction("acm_entry".into()))?;
+        let mut results = [result];
+        function.call(&mut *store, &params, &mut results)?;
+        let output = match results[0] {
+            Val::I32(value) => FunctionValue::Int(ContainerVariant::Single(value)),
+            Val::I64(value) => FunctionValue::Long(ContainerVariant::Single(value)),
+            _ => anyhow::bail!("Rust export has an incompatible result type"),
+        };
+        Ok((output, before.saturating_sub(store.get_fuel()?)))
+    }
+
     // Returns the return value of the function, along with the fuel consumed *purely* by the
     // invocation of that funcion, not the memory allocation of passing the arguments.
     pub fn call<S>(
@@ -476,6 +516,60 @@ mod tests {
             vec![],
             FunctionType::Int(ContainerVariantType::Single),
         )
+    }
+
+    #[test]
+    fn integer_call_needs_no_cpp_exports_and_enforces_fuel() {
+        let mut config = Config::default();
+        config.consume_fuel(true);
+        let engine = Engine::new(&config).unwrap();
+        for (body, success) in [
+            ("local.get 0 i64.extend_i32_s", true),
+            ("(loop br 0) i64.const 0", false),
+        ] {
+            let module = Module::new(
+                &engine,
+                format!("(module (func (export \"acm_entry\") (param i32) (result i64) {body}))"),
+            )
+            .unwrap();
+            let mut store = Store::new(&engine, ());
+            store.set_fuel(100).unwrap();
+            let instance = Instance::new(&mut store, &module, &[]).unwrap();
+            let input = WasmFunctionCall::new(
+                "ignored",
+                vec![FunctionValue::Int(ContainerVariant::Single(-7))],
+                FunctionType::Long(ContainerVariantType::Single),
+            );
+            let result = input.call_integers(&mut store, &instance);
+            if success {
+                let (value, fuel) = result.unwrap();
+                assert_eq!(value, FunctionValue::Long(ContainerVariant::Single(-7)));
+                assert!(fuel > 0);
+            } else {
+                assert_eq!(
+                    result.unwrap_err().downcast_ref::<Trap>(),
+                    Some(&Trap::OutOfFuel)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn integer_call_rejects_container_signatures() {
+        let engine = Engine::default();
+        let module = Module::new(&engine, "(module)").unwrap();
+        let mut store = Store::new(&engine, ());
+        let instance = Instance::new(&mut store, &module, &[]).unwrap();
+        let input = WasmFunctionCall::new(
+            "answer",
+            vec![FunctionValue::Int(ContainerVariant::List(vec![1]))],
+            FunctionType::Int(ContainerVariantType::Single),
+        );
+        assert!(input
+            .call_integers(&mut store, &instance)
+            .unwrap_err()
+            .to_string()
+            .contains("scalar"));
     }
 
     #[test]
