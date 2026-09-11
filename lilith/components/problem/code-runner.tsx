@@ -32,6 +32,7 @@ export default function CodeRunner(): JSX.Element {
                 return;
             }
 
+            const request = useSession.getState().beginCompilerCheck(id, language, implementation);
             setLoading(true);
 
             try {
@@ -56,6 +57,8 @@ export default function CodeRunner(): JSX.Element {
                 let job: JobStatus<Submission, string> = await res.json();
                 console.log(job);
                 let [data, err] = await monitorJob(job, (n) => setQueuePosition(n));
+
+                useSession.getState().finishCompilerCheck(request, err ?? data?.error);
 
                 if (data) {
                     setTimeout(() => {

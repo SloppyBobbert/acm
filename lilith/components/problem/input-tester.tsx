@@ -46,6 +46,7 @@ export default function InputTester() {
             return;
         }
 
+        const request = useSession.getState().beginCompilerCheck(problem_id!, language, implementation);
         setLoading(true);
         try {
             let res = await fetch(api_url("/run/custom"), {
@@ -71,6 +72,8 @@ export default function InputTester() {
             let job: JobStatus<CustomInputResponse, string> = await res.json();
 
             let [data, err] = await monitorJob(job, (n) => setQueuePosition(n));
+
+            useSession.getState().finishCompilerCheck(request, err);
 
             if (err) {
                 setResultError(err);

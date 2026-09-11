@@ -97,6 +97,7 @@ function ProblemEditorWrapper({
             <div className="flex-1 min-h-0">
                 <Editor
                     key={`${id}:${language}`}
+                    diagnosticProblem={id}
                     language={language}
                     value={content}
                     hideScrollbars={hideEditorScrollbars}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import renderLatex from "../../../utils/latex";
+import { Diagnostic, parseDiagnostics } from "../../../utils/editor-diagnostics";
 import { AsymptoticComplexity, Submission, useSession } from "../../../utils/state";
 
 export function ShareButton({
@@ -77,13 +78,6 @@ function CloseButton({ className }: { className?: string }) {
     </button >
 }
 
-type Diagnostic = {
-    line: number;
-    diagnostic_type: "Error" | "Warning" | "Note";
-    col: number;
-    message: string;
-};
-
 function DiagnosticDisplay(diagnostic: Diagnostic) {
     let diagnostic_color: string;
     let diagnostic_text: string;
@@ -114,15 +108,15 @@ function DiagnosticDisplay(diagnostic: Diagnostic) {
 }
 
 export function DiagnosticsDisplay({ error }: { error: string }) {
-    try {
-        let diagnostics = JSON.parse(error) as Diagnostic[];
+    const diagnostics = parseDiagnostics(error);
+    if (diagnostics) {
 
         return (
             <div className="grid grid-cols-min-full bg-red-600 border-red-700 border-t dark:bg-red-800 overflow-x-auto max-h-64">
                 {diagnostics.map((diagnostic, i) => <DiagnosticDisplay key={i} {...diagnostic} />)}
             </div>
         );
-    } catch (e) {
+    } else {
         return (
             <pre className="bg-red-700 dark:bg-red-800 overflow-x-auto p-2 max-h-64">
                 <code>{error}</code>

@@ -17,11 +17,17 @@ export default function EditorPreferences() {
         state.setEditorFontSize
     ]);
 
+    const inlineCodeChecks = useStore(state => state.inlineCodeChecks === true);
+    const setInlineCodeChecks = useStore(state => state.setInlineCodeChecks);
+
     return (
         <div className="bg-white dark:bg-black p-4 rounded shadow-md border border-neutral-300 dark:border-neutral-700">
             <h1 className="font-extrabold text-2xl mb-4">Settings</h1>
 
             <div className="grid grid-cols-full-min gap-2">
+                <label htmlFor="inline-code-checks">Inline code checks</label>
+                <input id="inline-code-checks" type="checkbox" className="justify-self-end"
+                    checked={inlineCodeChecks} onChange={event => setInlineCodeChecks(event.target.checked)} />
                 <span>Vim Mode</span>
                 <input
                     className="justify-self-end"

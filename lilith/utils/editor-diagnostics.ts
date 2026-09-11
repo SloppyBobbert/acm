@@ -1,0 +1,45 @@
+export type Diagnostic = {
+    line: number;
+    col: number;
+    diagnostic_type: "Error" | "Warning" | "Note";
+    message: string;
+};
+
+export function parseDiagnostics(error: unknown): Diagnostic[] | null {
+    if (typeof error !== "string" || error.length > 1024 * 1024) return null;
+    try {
+        const items: unknown = JSON.parse(error);
+        if (!Array.isArray(items) || !items.every(item => item &&
+            Number.isSafeInteger(item.line) && item.line >= 0 &&
+            Number.isSafeInteger(item.col) && item.col >= 0 &&
+            ["Error", "Warning", "Note"].includes(item.diagnostic_type) &&
+            typeof item.message === "string")) return null;
+        return items;
+    } catch { return null; }
+}
+
+export function compilerMarkers(error: unknown, source: string) {
+    const lines = source.split(/\r?\n/);
+    return (parseDiagnostics(error) ?? []).filter(d => d.line > 0 && d.line <= lines.length)
+        .slice(0, 100).map(d => {
+            const line = lines[d.line - 1];
+            // Compiler column units differ; non-ASCII or tabs use a safe whole-line range.
+            const precise = /^[\x20-\x7e]*$/.test(line) && d.col > 0 && d.col <= line.length + 1;
+            const column = precise ? Math.min(d.col, Math.max(1, line.length)) : 1;
+            return { startLineNumber: d.line, endLineNumber: d.line,
+                startColumn: column, endColumn: precise ? Math.min(column + 1, line.length + 1) : line.length + 1,
+                message: d.message, severity: d.diagnostic_type === "Error" ? 8 : d.diagnostic_type === "Warning" ? 4 : 2,
+                source: "Compiler" };
+        });
+}
+
+export type CompilerRequest = {
+    editor: number; generation: number; revision: number; request: number;
+    problem: number; language: "cpp" | "rust"; source: string;
+};
+
+export function sameRequest(a: CompilerRequest | null, b: CompilerRequest | null) {
+    return !!a && !!b && a.editor === b.editor && a.generation === b.generation &&
+        a.revision === b.revision && a.request === b.request && a.problem === b.problem &&
+        a.language === b.language && a.source === b.source;
+}

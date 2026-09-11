@@ -3,6 +3,7 @@ import { persist, StateStorage } from "zustand/middleware";
 import produce from "immer";
 import { FunctionValue, Test, WasmFunctionCall } from "../components/problem/submission/tests";
 import { Activity } from "../pages/meetings/new";
+import { CompilerRequest, sameRequest } from "./editor-diagnostics";
 
 type EditorThemeType = "light" | "dark" | "system";
 
@@ -43,6 +44,8 @@ export type Submission = {
 
 export interface Store {
     vimEnabled: boolean;
+    inlineCodeChecks: boolean;
+    setInlineCodeChecks: (enabled: boolean) => void;
     editorTheme: EditorThemeType;
     editorFontSize: number;
 
@@ -66,23 +69,31 @@ export const useStore = createWithEqualityFn<Store>()(
     persist(
         (set) => ({
             vimEnabled: false,
+            inlineCodeChecks: false,
+            setInlineCodeChecks: (inlineCodeChecks) => {
+                useSession.getState().invalidateDiagnostics(true);
+                set({ inlineCodeChecks });
+            },
             editorTheme: "system",
             editorFontSize: 18,
             problemImpls: {},
             rustImpls: {},
             problemLanguages: {},
-            setProblemLanguage: (id, language) => set(produce((state: Store) => {
-                state.problemLanguages[id] = language;
-            })),
+            setProblemLanguage: (id, language) => {
+                useSession.getState().invalidateDiagnostics();
+                set(produce((state: Store) => { state.problemLanguages[id] = language; }));
+            },
 
-            setProblemImpl: (id, impl, language = "cpp") =>
+            setProblemImpl: (id, impl, language = "cpp") => {
+                useSession.getState().invalidateDiagnostics();
                 set(
                     produce((state: Store) => {
                         if (language === "rust") state.rustImpls[id] = impl;
                         else state.problemImpls[id] = impl;
                         state.problemLanguages[id] = language;
                     })
-                ),
+                );
+            },
 
             setVimEnabled: (vimEnabled) =>
                 set(
@@ -115,15 +126,56 @@ export interface Session {
     error: string;
     errorShown: boolean;
     submissionShown: boolean;
+    diagnosticEditor: number;
+    diagnosticGeneration: number;
+    diagnosticRevision: number;
+    diagnosticRequestId: number;
+    compilerRequest: CompilerRequest | null;
+    compilerError: string | null;
+    invalidateDiagnostics: (newGeneration?: boolean) => void;
+    mountDiagnosticEditor: () => number;
+    beginCompilerCheck: (problem: number, language: Language, source: string) => CompilerRequest | null;
+    finishCompilerCheck: (request: CompilerRequest | null, error?: unknown) => void;
 
     setSubmissionShown: (shown: boolean) => void;
     setError: (error: string, shown: boolean) => void;
 }
 
-export const useSession = createWithEqualityFn<Session>()((set) => ({
+export const useSession = createWithEqualityFn<Session>()((set, get) => ({
     error: "",
     errorShown: false,
     submissionShown: true,
+    diagnosticEditor: 0,
+    diagnosticGeneration: 0,
+    diagnosticRevision: 0,
+    diagnosticRequestId: 0,
+    compilerRequest: null,
+    compilerError: null,
+    invalidateDiagnostics: (newGeneration = false) => set(state => ({
+        diagnosticRevision: state.diagnosticRevision + 1,
+        diagnosticGeneration: state.diagnosticGeneration + (newGeneration ? 1 : 0),
+        compilerRequest: null, compilerError: null,
+    })),
+    mountDiagnosticEditor: () => {
+        get().invalidateDiagnostics(true);
+        const diagnosticEditor = get().diagnosticEditor + 1;
+        set({ diagnosticEditor });
+        return diagnosticEditor;
+    },
+    beginCompilerCheck: (problem, language, source) => {
+        if (useStore.getState().inlineCodeChecks !== true) return null;
+        const state = get();
+        const request: CompilerRequest = { problem, language, source,
+            editor: state.diagnosticEditor, generation: state.diagnosticGeneration,
+            revision: state.diagnosticRevision, request: state.diagnosticRequestId + 1 };
+        set({ compilerRequest: request, compilerError: null, diagnosticRequestId: request.request });
+        return request;
+    },
+    finishCompilerCheck: (request, error) => {
+        const state = get();
+        if (useStore.getState().inlineCodeChecks !== true || !sameRequest(request, state.compilerRequest)) return;
+        set({ compilerError: typeof error === "string" ? error : null });
+    },
 
     setSubmissionShown: (shown) =>
         set(

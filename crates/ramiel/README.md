@@ -15,7 +15,7 @@ curl --fail http://127.0.0.1:8082/healthz
 
 Use `--hostname`, `--port`, and `--wasmtime-cache-config` to override the bind address, port, and cache configuration. Their environment-variable forms are `HOSTNAME`, `PORT`, and `WASMTIME_CACHE_CONFIG`.
 
-The supported production path is the Ramiel container built by `compose.production.yml`. Before using Compose commands, copy `deploy/.env.production.example` to `deploy/.env.production` and complete its required values. The container supplies the WASI SDK, runs as a non-root user, and keeps Ramiel on the internal runner network. The image and Compose service require native Linux amd64 with Landlock ABI 3 or later. Docker emulation on Apple Silicon is not supported.
+The supported production path is the Ramiel container built by `compose.production.yml`. Before using production Compose commands, create `deploy/.env.production` as `root:root` mode `0600` with `sudoedit`. Use the example as a field reference and follow [deployment](../../deploy/README.md). The container supplies the WASI SDK, runs as a non-root user, and keeps Ramiel on the internal runner network. The image and Compose service require native Linux amd64 with Landlock ABI 3 or later. Docker emulation on Apple Silicon is not supported.
 
 ## Rust submissions
 
