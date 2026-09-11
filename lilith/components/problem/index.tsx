@@ -33,12 +33,13 @@ type Problem = {
 
 async function rustTemplate(url: string): Promise<string> {
     const response = await fetch(url, { credentials: "include" });
-    const body = await response.json();
-    if (!response.ok)
+    if (!response.ok) {
+        const body = await response.json().catch(() => null);
         throw new Error(
-            body.message ?? body.error ?? "Could not load the Rust template.",
+            body?.message ?? body?.error ?? "Could not load the Rust template.",
         );
-    return body;
+    }
+    return response.json();
 }
 
 function ProblemEditorWrapper({

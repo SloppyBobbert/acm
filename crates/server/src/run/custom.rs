@@ -38,10 +38,11 @@ pub async fn custom(
         FROM
             problems
         WHERE
-            id = ?
+            id = ? AND (visible OR ?)
         "#,
     )
     .bind(form.problem_id)
+    .bind(claims.validate_officer().is_ok())
     .fetch_one(&pool)
     .await
     .map_err(|_| ServerError::NotFound)?;

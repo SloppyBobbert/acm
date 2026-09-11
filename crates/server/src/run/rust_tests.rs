@@ -121,3 +121,60 @@ async fn custom_signature_must_match_stored_tests() {
     different.arguments[0] = FunctionValue::Int(ContainerVariant::List(vec![1]));
     assert!(rust_signature(&pool, 1, Some(&different)).await.is_err());
 }
+
+#[tokio::test]
+async fn custom_runs_require_visible_problems_or_officer_access() {
+    use crate::auth::Auth;
+    let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+    sqlx::migrate!("../../migrations").run(&pool).await.unwrap();
+    sqlx::query("INSERT INTO problems (id,title,description,runner,reference,template,visible) VALUES (1,'test','','','reference','',0)").execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO tests (problem_id,test_number,input,expected_output) VALUES (1,0,?,'null')",
+    )
+    .bind(serde_json::to_string(&input()).unwrap())
+    .execute(&pool)
+    .await
+    .unwrap();
+    for language in [Language::Cpp, Language::Rust] {
+        for (visible, auth, allowed) in [
+            (false, Auth::Member, false),
+            (false, Auth::Officer, true),
+            (false, Auth::Admin, true),
+            (true, Auth::Member, true),
+            (true, Auth::LoggedOut, false),
+        ] {
+            sqlx::query("UPDATE problems SET visible=? WHERE id=1")
+                .bind(visible)
+                .execute(&pool)
+                .await
+                .unwrap();
+            let (queue, mut receiver) = mpsc::unbounded_channel();
+            let map = Arc::new(RwLock::new(HashMap::new()));
+            let (broadcast, _) = broadcast::channel(8);
+            let result = custom::custom(
+                Claims {
+                    user_id: 1,
+                    auth,
+                    exp: 0,
+                },
+                Extension(pool.clone()),
+                Extension(queue),
+                Extension(map.clone()),
+                Extension(broadcast),
+                Json(custom::CustomProblemInputForm {
+                    language,
+                    problem_id: 1,
+                    implementation: "test".into(),
+                    input: input(),
+                }),
+            )
+            .await;
+            assert_eq!(result.is_ok(), allowed);
+            assert_eq!(receiver.try_recv().is_ok(), allowed);
+            assert_eq!(map.read().await.len(), usize::from(allowed));
+            if !visible && !allowed {
+                assert!(matches!(result, Err(ServerError::NotFound)));
+            }
+        }
+    }
+}

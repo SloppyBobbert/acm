@@ -49,8 +49,8 @@ export default function CodeRunner(): JSX.Element {
                 });
 
                 if (!res.ok) {
-                    const error = await res.json();
-                    setError(error.message ?? error.error ?? "Submission was rejected.", true);
+                    const error = await res.json().catch(() => null);
+                    setError(error?.message ?? error?.error ?? "Submission was rejected.", true);
                     return;
                 }
                 let job: JobStatus<Submission, string> = await res.json();

@@ -63,8 +63,8 @@ export default function InputTester() {
             });
 
             if (!res.ok) {
-                const error = await res.json();
-                setResultError(error.message ?? error.error ?? "Custom input was rejected.");
+                const error = await res.json().catch(() => null);
+                setResultError(error?.message ?? error?.error ?? "Custom input was rejected.");
                 setTestResult(null);
                 return;
             }
