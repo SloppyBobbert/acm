@@ -179,7 +179,7 @@ const fixture = () => {
     assert.equal(await evaluate('JSON.parse(localStorage.data).state.inlineCodeChecks'), true);
     // Simulated compiler payloads exercise the actual buttons/job monitor/result panels.
     await source('pub fn solve(x: i32) -> i32 { x }');
-    const payload = JSON.stringify([{ line: 1, col: 8, diagnostic_type: 'Error', message: 'SIMULATED compiler error' }, { line: 0, col: 0, diagnostic_type: 'Error', message: 'SIMULATED wrapper error' }]);
+    const payload = JSON.stringify([null, { invalid: true }, { line: 1, col: 8, diagnostic_type: 'Error', message: 'SIMULATED compiler error' }, { line: 0, col: 0, diagnostic_type: 'Error', message: 'SIMULATED wrapper error' }]);
     await evaluate(`fixture.nextError=${JSON.stringify(payload)}`);
     await click('Show console'); await wait('Array.from(document.querySelectorAll("button")).some(b=>b.textContent.trim()==="Run")');
     await evaluate(`fixture.nextError=JSON.stringify(Array(5000).fill({line:1,col:1,diagnostic_type:'Error',message:'SIMULATED repeated diagnostic'}))`);

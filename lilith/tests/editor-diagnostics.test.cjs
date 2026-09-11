@@ -27,6 +27,12 @@ test('payload validation and bounded compiler coordinates, including Unicode and
   assert.equal(markers[1].startColumn, 1);
   assert.equal(markers[1].endColumn, 7);
   assert.equal(helpers.compilerMarkers(JSON.stringify(Array(200).fill(diagnostic(1, 1))), 'x').length, 100);
+  const mixed = JSON.stringify([null, diagnostic(1, 2), { ...diagnostic(1, 1), line: -1 }, 'invalid', diagnostic(0, 0)]);
+  const valid = helpers.parseDiagnostics(mixed);
+  assert.equal(valid.length, 2);
+  assert.equal(valid[0].line, 1);
+  assert.equal(valid[1].line, 0);
+  assert.equal(helpers.compilerMarkers(mixed, 'abc').length, 1);
 });
 
 test('result panels cap diagnostics separately from markers and show truncation', () => {
@@ -39,7 +45,7 @@ test('result panels cap diagnostics separately from markers and show truncation'
   assert.equal(parsed.at(-1).line, 0);
   assert.match(parsed.at(-1).message, /4500 additional diagnostics omitted/);
   assert.equal(helpers.compilerMarkers(payload, 'x').length, 100);
-  assert.equal(helpers.parseDiagnostics(JSON.stringify([...Array(500).fill(diagnostic), null])), null);
+  assert.equal(helpers.parseDiagnostics(JSON.stringify([...Array(500).fill(diagnostic), null])).length, 500);
 });
 
 test('persisted default off and compiler identities reject restoration, off/on, navigation and concurrent Run/Submit', () => {

@@ -10,12 +10,14 @@ const RESULT_PANEL_LIMIT = 500;
 export function parseDiagnostics(error: unknown): Diagnostic[] | null {
     if (typeof error !== "string" || error.length > 1024 * 1024) return null;
     try {
-        const items: unknown = JSON.parse(error);
-        if (!Array.isArray(items) || !items.every(item => item &&
+        const parsed: unknown = JSON.parse(error);
+        if (!Array.isArray(parsed)) return null;
+        const items = parsed.filter(item => item &&
             Number.isSafeInteger(item.line) && item.line >= 0 &&
             Number.isSafeInteger(item.col) && item.col >= 0 &&
             ["Error", "Warning", "Note"].includes(item.diagnostic_type) &&
-            typeof item.message === "string")) return null;
+            typeof item.message === "string");
+        if (parsed.length && !items.length) return null;
         if (items.length <= RESULT_PANEL_LIMIT) return items;
         return [...items.slice(0, RESULT_PANEL_LIMIT), {
             line: 0, col: 0, diagnostic_type: "Note",
