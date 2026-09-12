@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { once } = require('node:events');
 const url = process.argv[2];
-const origin = process.env.DIAGNOSTICS_ORIGIN || 'http://localhost:3101';
+const origin = process.env.DIAGNOSTICS_ORIGIN || 'http://127.0.0.1:3101';
 const output = path.resolve(process.env.DIAGNOSTICS_EVIDENCE || '.local/acceptance/editor-diagnostics/browser');
 fs.mkdirSync(output, { recursive: true });
 const fixture = () => {
@@ -101,6 +101,10 @@ const fixture = () => {
   };
   const click = text => evaluate(`Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === ${JSON.stringify(text)})?.click()`);
   const source = value => evaluate(`window.editorModel().setValue(${JSON.stringify(value)})`);
+  const language = async value => {
+    await evaluate(`{const s=document.querySelector('[aria-label="Submission language"]');s.value=${JSON.stringify(value)};s.dispatchEvent(new Event('change',{bubbles:true}));}`);
+    await wait(`editorModel()?.getLanguageId() === ${JSON.stringify(value)}`);
+  };
   const toggle = async enabled => {
     await click('Settings'); await wait('!!document.getElementById("inline-code-checks")');
     if (await evaluate('document.getElementById("inline-code-checks").checked') !== enabled) {
@@ -172,7 +176,10 @@ const fixture = () => {
     milestones.push(await evaluate('({phase:"Rust real grammar",workers:fixture.workers,messages:fixture.messages})'));
     await toggle(false); assert.deepEqual(await evaluate('inlineMarkers()'), []);
     assert.equal(await evaluate('fixture.workers.filter(w=>!w.terminated).length'), 0);
+    const rustDraft = await evaluate('editorModel().getValue()');
     await call('Page.reload'); await wait('!!window.editorModel?.()');
+    assert.equal(await evaluate('editorModel().getValue()'), rustDraft);
+    assert.equal(await evaluate('editorModel().getLanguageId()'), 'rust');
     assert.equal(await evaluate('fixture.workers.length'), 0);
     await toggle(true); await wait('fixture.messages.length > 0');
     await call('Page.reload'); await wait('fixture.messages?.length > 0');
@@ -198,6 +205,8 @@ const fixture = () => {
         await click(button);
         await wait(`fixture.requests.length > ${count} && Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()===${JSON.stringify(button)} && !b.disabled)`);
         assert.equal(await evaluate('inlineMarkers().some(m=>m.className === "squiggly-error" && m.range.startColumn === 8)'), true);
+        const message = failure === 'http' ? 'SIMULATED HTTP failure' : 'Network error.';
+        assert.equal(await evaluate(`document.body.innerText.includes(${JSON.stringify(message)})`), true);
         await evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
       }
     }
@@ -252,10 +261,26 @@ const fixture = () => {
     await wait('fixture.messages.at(-1)?.markers?.length === 0 && fixture.messages.at(-1)?.version === editorModel().getVersionId()');
     const narrow = await call('Page.captureScreenshot', { format: 'png' }); fs.writeFileSync(path.join(output, 'narrow.png'), Buffer.from(narrow.data, 'base64'));
     await toggle(false);
+    const savedRust = 'pub fn solve(x: i32) -> i32 { x + 7 }';
+    const savedCpp = 'int solve(int x) { return x + 8; }';
+    const otherCpp = 'int solve(int x) { return x + 2; }';
+    await source(savedRust);
+    await language('cpp'); await source(savedCpp);
+    await language('rust');
     await evaluate('window.next.router.push("/problems/992")');
     await wait('location.pathname === "/problems/992" && editorModel()?.getLanguageId() === "cpp"');
     assert.equal(await evaluate('fixture.workers.filter(w=>!w.terminated).length'), 0);
     assert.deepEqual(await evaluate('inlineMarkers()'), []);
+    await source(otherCpp);
+    await evaluate('window.next.router.push("/problems/991")');
+    await wait('location.pathname === "/problems/991" && editorModel()?.getLanguageId() === "rust"');
+    assert.equal(await evaluate('editorModel().getValue()'), savedRust);
+    await language('cpp');
+    assert.equal(await evaluate('editorModel().getValue()'), savedCpp);
+    await evaluate('window.next.router.push("/problems/992")');
+    await wait('location.pathname === "/problems/992" && editorModel()?.getLanguageId() === "cpp"');
+    assert.equal(await evaluate('editorModel().getValue()'), otherCpp);
+    milestones.push({ phase: 'Separate language drafts persist across reload and problem navigation' });
     const result = await evaluate('({workers:fixture.workers,messages:fixture.messages,requests:fixture.requests})');
     fs.writeFileSync(path.join(output, 'ui-evidence.json'), JSON.stringify({ simulatedAPI: true, milestones, result, exceptions, network }, null, 2));
     // Explicit harness-only workers benchmark the same production assets after the UI is off.

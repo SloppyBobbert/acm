@@ -1,0 +1,11 @@
+{
+  "title": "Local demo: Larger of two integers",
+  "description": "Development sample. Return the larger integer. Equal inputs return that same value. These are function arguments, not stdin.\n\n| a | b | Expected result |\n| --- | --- | --- |\n| 2 | 9 | 9 |\n| -2 | -9 | -2 |\n| 4 | 4 | 4 |\n\nC++ example:\n\n```cpp\nint larger(int a, int b) { return a > b ? a : b; }\n```\n\nRust example:\n\n```rust\nfn larger(a: i32, b: i32) -> i32 { if a > b { a } else { b } }\n```\n",
+  "reference": "int larger(int a, int b) { return a > b ? a : b; }\n",
+  "template": "int larger(int a, int b) {\n    // Return the larger integer.\n    return 0;\n}\n",
+  "tests": [
+    { "index": 0, "input": { "name": "larger", "arguments": [{ "Int": { "Single": 2 } }, { "Int": { "Single": 9 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 9 } }, "max_fuel": null },
+    { "index": 1, "input": { "name": "larger", "arguments": [{ "Int": { "Single": -2 } }, { "Int": { "Single": -9 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": -2 } }, "max_fuel": null },
+    { "index": 2, "input": { "name": "larger", "arguments": [{ "Int": { "Single": 4 } }, { "Int": { "Single": 4 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 4 } }, "max_fuel": null }
+  ]
+}

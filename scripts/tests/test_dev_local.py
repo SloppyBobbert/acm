@@ -43,9 +43,78 @@ class DevLocalTests(unittest.TestCase):
                     expected = f"{self.root}/opt/node@18/bin:{expected}"
                 self.assertEqual(result.stdout, expected)
 
+    def config(self, **env):
+        defaults = SCRIPT.split('if [[ -f ', 1)[1].split('if [[ "$DATABASE_URL"', 1)[0]
+        return self.shell(
+            'ROOT_DIR="$HOME"\nif [[ -f ' + defaults
+            + '\nprintf "%s\\n" "$DATABASE_URL" "$FRONTEND_ORIGIN" "$DISCORD_REDIRECT_URI"',
+            **env,
+        )
+
+    def test_frontend_port_sets_origin_and_redirect(self):
+        result = self.config(FRONTEND_PORT="3101")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines()[1:], [
+            "http://127.0.0.1:3101", "http://127.0.0.1:3101/auth/discord",
+        ])
+
+    def test_demo_env_does_not_load_existing_root_env(self):
+        (self.root / ".env").write_text("DATABASE_URL=do-not-use\n")
+        result = self.config(DEV_ENV_FILE="/dev/null", DATABASE_URL="sqlite://./demo.sqlite")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines()[0], "sqlite://./demo.sqlite")
+
+    def test_selected_env_file_supplies_config_instead_of_root_env(self):
+        (self.root / ".env").write_text("DATABASE_URL=do-not-use\nFRONTEND_PORT=3999\n")
+        selected = self.root / "demo.env"
+        selected.write_text("DATABASE_URL=sqlite://./demo.sqlite\nFRONTEND_PORT=3101\n")
+        result = self.config(DEV_ENV_FILE=str(selected))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), [
+            "sqlite://./demo.sqlite", "http://127.0.0.1:3101", "http://127.0.0.1:3101/auth/discord",
+        ])
+
+    def test_reject_missing_explicit_env_file(self):
+        result = self.config(DEV_ENV_FILE=str(self.root / "missing.env"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("DEV_ENV_FILE", result.stderr)
+
+    def test_reject_invalid_runner_mode(self):
+        result = self.config(DEV_START_RAMIEL="invalid")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("DEV_START_RAMIEL", result.stderr)
+
+    def test_reject_mismatched_frontend_origin(self):
+        result = self.config(FRONTEND_PORT="3101", FRONTEND_ORIGIN="http://127.0.0.1:3000")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("FRONTEND_ORIGIN", result.stderr)
+
+    def test_api_only_preserves_database_and_skips_runner(self):
+        script = self.root / "scripts/dev-local.sh"
+        script.parent.mkdir()
+        script.write_text(SCRIPT)
+        (self.root / "lilith/node_modules").mkdir(parents=True)
+        database = self.root / "demo.sqlite"
+        database.write_bytes(b"existing database sentinel")
+        tools = self.root / "bin"
+        self.executable(tools / "cargo", 'echo "$SQLX_OFFLINE $*" >> "$HOME/builds"\n')
+        self.executable(tools / "corepack", 'echo "$NEXT_PUBLIC_API_URL $NEXT_PUBLIC_WS_URL $*" > "$HOME/frontend"\n')
+        self.executable(self.root / "target/debug/server", "exit 0\n")
+        result = self.shell(
+            '/bin/bash "$HOME/scripts/dev-local.sh"',
+            PATH=f"{tools}:/usr/bin:/bin", DEV_ENV_FILE="/dev/null",
+            DEV_START_RAMIEL="false", FRONTEND_PORT="3101", PORT="8181",
+            DATABASE_URL=f"sqlite://{database}",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / "builds").read_text(), "true build --locked -p server\n")
+        self.assertIn("Ramiel startup skipped", result.stdout)
+        self.assertIn("http://127.0.0.1:8181 ws://127.0.0.1:8181/ws", (self.root / "frontend").read_text())
+        self.assertEqual(database.read_bytes(), b"existing database sentinel")
+
     def docker_case(self, fail=False):
         # Mock the absolute compiler probe, so this test never starts a host runner.
-        start = SCRIPT.split("start_ramiel() {", 1)[1].split("\n}\n\nstart_ramiel", 1)[0]
+        start = SCRIPT.split("start_ramiel() {", 1)[1].split("\n}\n\nif [[", 1)[0]
         self.assertIn("[[ -x /opt/wasi-sdk/bin/clang++ ]]", start)
         start = start.replace("[[ -x /opt/wasi-sdk/bin/clang++ ]]", "false")
         cleanup = SCRIPT.split("cleanup() {", 1)[1].split("\n}\n", 1)[0]
