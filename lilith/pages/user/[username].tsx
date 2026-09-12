@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import useSWR, { useSWRConfig } from "swr";
 import Navbar from "../../components/navbar";
 import Error from "next/error";
-import { api_url, fetcher } from "../../utils/fetcher";
+import { api_url, fetcher, FetchError } from "../../utils/fetcher";
 import Link from "next/link";
 import { User, useSession } from "../../utils/state";
 import useSWRInfinite from "swr/infinite";
@@ -335,12 +335,10 @@ const UserPage: NextPage = () => {
   const username = query.username;
   const [editingProfile, setEditingProfile] = useState(false);
 
-  const { data: user, error } = useSWR<User>(
+  const { data: user, error } = useSWR<User, FetchError>(
     isReady && typeof username === "string" ? api_url(`/user/username/${username}`) : null,
     fetcher
   );
-
-  if (error) return <Error statusCode={404} />;
 
   return (
     <div className="page-shell">
@@ -351,7 +349,9 @@ const UserPage: NextPage = () => {
       </Head>
 
       <main className="mx-auto grid w-full max-w-screen-md flex-1 grid-cols-[minmax(0,1fr)] grid-rows-min-full lg:max-w-screen-lg lg:grid-flow-col lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-1 lg:gap-4 lg:p-4">
-        {!user ? (
+        {error ? (
+          error.status === 404 ? <Error statusCode={404} /> : <ErrorBox>Could not load profile. Refresh the page to try again.</ErrorBox>
+        ) : !user ? (
           <UserLoading />
         ) : editingProfile ? (
           <UserEditor {...user} onDone={() => setEditingProfile(false)} />
@@ -359,7 +359,7 @@ const UserPage: NextPage = () => {
           <UserInfo {...user} onEdit={() => setEditingProfile(true)} />
         )}
 
-        {isReady && typeof username === "string" && (
+        {!error && isReady && typeof username === "string" && (
           <RecentSubmissions username={username} />
         )}
       </main>

@@ -3,6 +3,7 @@ import Head from "next/head";
 import Link from "next/link";
 import useSWR from "swr";
 import Navbar from "../../components/navbar";
+import ErrorBox from "../../components/error-box";
 import { api_url, fetcher } from "../../utils/fetcher";
 import { User } from "../../utils/state";
 
@@ -28,10 +29,13 @@ export function CompetitionGrid(): JSX.Element {
   const { data, error } = useSWR<Competition[]>(api_url("/competitions"), fetcher);
 
   if (error)
-    return <></>;
+    return <ErrorBox>Could not load competitions. Refresh the page to try again.</ErrorBox>;
 
   if (!data)
-    return <></>;
+    return <p role="status">Loading competitions…</p>;
+
+  if (data.length === 0)
+    return <p>No competitions yet.</p>;
 
   return (
     <div className="grid md:grid-cols-2 gap-4">

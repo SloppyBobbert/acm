@@ -31,7 +31,9 @@ function component(file, extra = '') {
     useEffect(effect) { h.cursor++; h.effects.push(effect); },
   };
   h.fetchers = [];
-  const swr = (key, fetcher) => { h.keys.push(key); h.fetchers.push(fetcher); return { data: user }; };
+  h.swrResult = { data: user };
+  h.infiniteResult = { data: undefined, isValidating: false, size: 1, setSize() {} };
+  const swr = (key, fetcher) => { h.keys.push(key); h.fetchers.push(fetcher); return h.swrResult; };
   swr.useSWRConfig = () => ({ mutate: key => { h.mutations.push(key); return Promise.resolve(); } });
   h.response = { ok: true, json: async () => ({}) };
   h.requests = [];
@@ -57,6 +59,7 @@ function component(file, extra = '') {
       if (name === 'react/jsx-runtime') return { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: 'fragment' };
       if (name === 'next/router') return { useRouter: () => h.router };
       if (name === 'swr') return swr;
+      if (name === 'swr/infinite') return () => h.infiniteResult;
       if (name.endsWith('/utils/fetcher')) return { api_url: value => 'api:' + value, fetcher: url => h.requests.push([url]) };
       if (name.endsWith('/utils/state')) return { useSession: select => select({ setError: (...args) => h.errors.push(args) }) };
       return name;
@@ -263,5 +266,71 @@ test('problem search preserves punctuation and cannot change other URL parameter
     assert.equal(url.searchParams.get('query'), query);
     assert.equal(url.searchParams.get('count'), '10');
     assert.equal(url.searchParams.size, 2);
+  }
+});
+
+for (const [state, result, message] of [
+  ['loading', {}, 'Loading competitions…'],
+  ['error', { error: new Error('offline') }, 'Could not load competitions. Refresh the page to try again.'],
+  ['empty', { data: [] }, 'No competitions yet.'],
+]) {
+  test(`competition list has a visible ${state} state`, () => {
+    const h = component('pages/competitions/index.tsx');
+    h.swrResult = result;
+    assert.ok(find(h.render(h.exports.CompetitionGrid), node => node.props?.children === message));
+  });
+}
+
+test('empty problem search reports no matches', () => {
+  const h = component('pages/problems/index.tsx', '\nexports.ProblemSearchResults = ProblemSearchResults;');
+  h.swrResult = { data: [] };
+  assert.ok(find(h.render(h.exports.ProblemSearchResults, { query: 'missing' }), node => node.props?.children === 'No problems found.'));
+});
+
+test('problem pagination stops after an empty page without hiding previous results', () => {
+  const h = component('pages/problems/index.tsx', '\nexports.ProblemInfiniteResults = ProblemInfiniteResults;');
+  const problem = { id: 9 };
+  for (const pages of [[[]], [[problem], []]]) {
+    h.infiniteResult.data = pages;
+    const tree = h.render(h.exports.ProblemInfiniteResults, {});
+    assert.equal(find(tree, node => node.props?.children === 'Load more'), undefined);
+    if (pages.length === 1) assert.ok(find(tree, node => node.props?.children === 'No problems found.'));
+    else assert.ok(find(tree, node => node.props?.problems?.[0] === problem));
+  }
+  h.infiniteResult.data = [[problem]];
+  assert.ok(find(h.render(h.exports.ProblemInfiniteResults, {}), node => node.props?.children === 'Load more'));
+});
+
+for (const status of [undefined, 500, 404]) {
+  test(`profile ${status ?? 'network'} failure keeps navigation and uses the correct error state`, () => {
+    const h = profile();
+    h.router.query.username = 'demo-user';
+    h.swrResult = { error: Object.assign(new Error('request failed'), { status }) };
+    const tree = h.render();
+    assert.ok(find(tree, node => typeof node.type === 'string' && node.type.endsWith('/navbar')));
+    const notFound = find(tree, node => node.props?.statusCode === 404);
+    if (status === 404) assert.ok(notFound);
+    else {
+      assert.equal(notFound, undefined);
+      assert.ok(find(tree, node => node.props?.children === 'Could not load profile. Refresh the page to try again.'));
+    }
+    assert.equal(find(tree, node => node.type?.name === 'RecentSubmissions'), undefined);
+  });
+}
+
+test('fetcher preserves HTTP status without changing request credentials or network failures', async () => {
+  const h = component('utils/fetcher.ts');
+  for (const status of [404, 500]) {
+    h.response = { ok: false, status };
+    await assert.rejects(h.exports.fetcher('/test'), error => error.status === status && error.message === 'failed to make request');
+  }
+  h.response = { ok: true, json: async () => ({ name: 'test' }) };
+  assert.equal((await h.exports.fetcher('/test')).name, 'test');
+  const offline = new TypeError('offline');
+  h.networkError = offline;
+  await assert.rejects(h.exports.fetcher('/test'), error => error === offline);
+  for (const [, options] of h.requests) {
+    assert.equal(options.method, 'GET');
+    assert.equal(options.credentials, 'include');
   }
 });
