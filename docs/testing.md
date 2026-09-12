@@ -1,6 +1,6 @@
 # Testing and verification
 
-Run these from the repository root unless noted otherwise.
+Run these from the repository root unless noted otherwise. For a local demo without hosting, use [the demo procedure](local-demo.md) and [its verification record](local-demo-verification.md).
 
 ## Rust
 
@@ -42,7 +42,7 @@ The focused test loads the checked-in actual grammar WASMs, exercises Unicode/CR
 For repeatable production-browser checks, use Node 22+ (native WebSocket), Chrome and `agent-browser`. Use a separate frontend port; no database or login is needed because **all API responses in this check are simulated in the browser**. Set the public API URL at build time; missing configuration produces `undefined/...` URLs and is not a valid application setup.
 
 ```sh
-(cd lilith && NEXT_PUBLIC_API_URL=http://127.0.0.1:8081 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8081 corepack yarn build)
+(cd lilith && NEXT_PUBLIC_API_URL=http://127.0.0.1:8081 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8081/ws corepack yarn build)
 (cd lilith && corepack yarn start -p 3101) # separate terminal
 agent-browser --session diagnostics-check open about:blank
 node lilith/tests/editor-diagnostics.browser.cjs "$(agent-browser --session diagnostics-check get cdp-url)"
@@ -52,6 +52,16 @@ agent-browser --session diagnostics-check close
 The script attaches CDP to that browser, opens its own page, and runs the production editor with real local syntax workers/grammars. It checks default-off/no parser requests, keyboard toggling, persistence, both languages, Unicode, compiler-marker wiring through Run/Submit, identical-source history restoration, off/on and concurrent-request rejection, missing-worker failure, the 200 KiB limit, navigation, and worker teardown. Screenshots, UI evidence and cold/warm/50 KiB parse timings go under ignored `.local/acceptance/editor-diagnostics/browser/`. Override `DIAGNOSTICS_ORIGIN` and `DIAGNOSTICS_EVIDENCE` if necessary. The browser harness uses React's internal fiber only to locate the actual Monaco model; no test hooks are shipped in production. If React changes, update that harness lookup rather than adding an application backdoor.
 
 This is **not native compiler/browser acceptance**. On a supported native Linux amd64 runner with a test login, separately exercise real Rust/C++ errors and successful compilation through both Run and Submit. Keep that acceptance blocked when the supported host/login is unavailable; never bypass compiler isolation. Asset provenance, versions, licenses and raw sizes are recorded in [the asset manifest](../lilith/public/editor-diagnostics/README.md).
+
+## Local launcher and sample data
+
+```sh
+bash -n scripts/dev-local.sh
+python3 scripts/tests/test_dev_local.py
+SQLX_OFFLINE=true cargo test --locked -p server local_samples_use_existing_creation_and_test_paths
+```
+
+The launcher tests use fake processes, not real services. They check origin selection, isolated environment selection, API-only startup, database preservation, and runner cleanup. The sample test uses real migrations and creation/read handlers with an in-memory database and test-only claims. It proves the sample payload format and stored test values, not a real login or compiler run.
 
 ## Containers and Compose
 

@@ -124,3 +124,72 @@ pub async fn new(
 
     Ok(Json(NewBody { id: problem.id }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::Auth;
+
+    // Test-only claims and an in-memory database. No login or runner acceptance.
+    #[tokio::test]
+    async fn local_samples_use_existing_creation_and_test_paths() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!("../../migrations").run(&pool).await.unwrap();
+        let (broadcast, _) = tokio::sync::broadcast::channel(8);
+        for json in [
+            include_str!("../../../../docs/examples/local-demo/add.json"),
+            include_str!("../../../../docs/examples/local-demo/larger.json"),
+        ] {
+            for auth in [Auth::LoggedOut, Auth::Member] {
+                assert!(new(
+                    Extension(pool.clone()),
+                    Extension(broadcast.clone()),
+                    Claims {
+                        user_id: -1,
+                        auth,
+                        exp: 0
+                    },
+                    Json(serde_json::from_str(json).unwrap()),
+                )
+                .await
+                .is_err());
+            }
+            let form: NewForm = serde_json::from_str(json).unwrap();
+            let expected = form.tests.clone();
+            let created = new(
+                Extension(pool.clone()),
+                Extension(broadcast.clone()),
+                Claims {
+                    user_id: 1,
+                    auth: Auth::Officer,
+                    exp: 0,
+                },
+                Json(form),
+            )
+            .await
+            .unwrap()
+            .0;
+            assert!(crate::run::rust_signature(&pool, created.id, None)
+                .await
+                .is_ok());
+            for expected in expected {
+                let actual = super::super::tests::problem_test(
+                    Extension(pool.clone()),
+                    axum::extract::Path((created.id, expected.index)),
+                )
+                .await
+                .unwrap()
+                .0
+                .unwrap();
+                assert_eq!(actual.input, expected.input);
+                assert_eq!(actual.expected_output, expected.expected_output);
+                assert_eq!(actual.max_fuel, expected.max_fuel);
+            }
+        }
+        let (count,): (i64,) = sqlx::query_as("SELECT count(*) FROM problems")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+}
