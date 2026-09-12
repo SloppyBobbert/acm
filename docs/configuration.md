@@ -6,6 +6,9 @@ Copy the example files for local development only. Do not put real secrets in th
 
 | Variable | Required | Default | Shape and source |
 | --- | --- | --- | --- |
+| `DEV_ENV_FILE` | Local script only | Repository `.env` | Optional environment file for `scripts/dev-local.sh`. Use a separate local file for the demo; the script does not modify it. |
+| `DEV_START_RAMIEL` | Local script only | `true` | Set `false` to run only the API and frontend, or to use an existing runner at `RAMIEL_URL`. It does not simulate compiler responses. |
+| `SQLX_OFFLINE` | Local build | `true` in local script | Use checked-in query metadata for builds, including the first run with an empty database. |
 | `API_HOSTNAME` | Local script only | `127.0.0.1` | API bind address used by `scripts/dev-local.sh`; not read by server Clap. |
 | `HOSTNAME` | No | `127.0.0.1` | Server Clap bind address. Shells commonly predefine it, so pass `--hostname` explicitly. |
 | `PORT` | No | `8081` | API TCP port. Server Clap option; `.env.example`; local script. |
@@ -16,12 +19,12 @@ Copy the example files for local development only. Do not put real secrets in th
 | `DISCORD_SECRET` | Local script: no; manual server/production: yes | Local script: `dev-only-change-me`; otherwise none | Discord OAuth client secret. The local default is not production-safe. |
 | `DISCORD_CLIENT_ID` | Local script: no; manual server/production: yes | Local example: `local-discord-client-id`; otherwise none | Discord OAuth client ID. Server environment only. |
 | `DISCORD_REDIRECT_URI` | Local script: no; manual server/production: yes | Local example: `http://127.0.0.1:3000/auth/discord`; otherwise none | Uses `FRONTEND_ORIGIN`'s normalized scheme, host, and effective port, with the exact `/auth/discord` path and no credentials, query, or fragment. Register it in Discord. Use HTTPS in production; HTTP is allowed only for insecure localhost development. |
-| `FRONTEND_ORIGIN` | Local script: no; manual server/production: yes | Local script: `http://127.0.0.1:3000`; otherwise none | Exact `http` or `https` origin, without path or query. Used for credentialed CORS. |
+| `FRONTEND_ORIGIN` | Local script: no; manual server/production: yes | Local script: `http://127.0.0.1:$FRONTEND_PORT`; otherwise none | Exact `http` or `https` origin, without path or query. Used for credentialed CORS. |
 | `COOKIE_SECURE` | Local script: no; manual server: yes | Local script: `false`; production Compose: `true` | Boolean. Use `false` only for local HTTP and `true` for production HTTPS. |
 | `TRUSTED_PROXY_IP` | No | none | IP address of the only proxy whose forwarded client address the server trusts. Leave unset for direct local development. Production Compose fixes it to Caddy's `172.30.0.2`. |
 | `RAMIEL_HOSTNAME` | Local script only | `127.0.0.1` | Ramiel bind address used by `scripts/dev-local.sh`. |
 | `RAMIEL_PORT` | Local script only | `8082` | Ramiel port used by `scripts/dev-local.sh`. |
-| `FRONTEND_PORT` | Local script only | `3000` | Next.js dev-server port used by `scripts/dev-local.sh`. |
+| `FRONTEND_PORT` | Local script only | `3000` | Next.js dev-server port used by `scripts/dev-local.sh`. An explicit `FRONTEND_ORIGIN` must match `http://127.0.0.1:$FRONTEND_PORT`; update the Discord redirect too. |
 
 Ramiel itself accepts `PORT` (default `8082`), `HOSTNAME` (default `127.0.0.1`), and `WASMTIME_CACHE_CONFIG` (default `./wasmtime-cache.toml`). The local script passes Ramiel's bind address and port explicitly. Pass `--hostname` to either service rather than relying on `HOSTNAME` from the shell.
 

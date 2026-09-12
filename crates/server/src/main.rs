@@ -185,6 +185,21 @@ mod tests {
             args.discord_redirect_uri,
             "https://acm.example.com/auth/discord"
         );
+        assert!(!args.cookie_secure);
+        for value in ["false", "true"] {
+            let args = Args::try_parse_from([
+                "server",
+                "--discord-client-id",
+                "test-client-id",
+                "--discord-redirect-uri",
+                "https://acm.example.com/auth/discord",
+                "--cookie-secure",
+                value,
+            ])
+            .unwrap();
+            assert_eq!(args.cookie_secure, value == "true");
+            assert_eq!(args.jwt_secret, "test-jwt-secret");
+        }
     }
 
     #[test]
@@ -317,7 +332,7 @@ struct Args {
     #[arg(env)]
     frontend_origin: String,
 
-    #[arg(env, long, value_parser = clap::value_parser!(bool))]
+    #[arg(env, long, action = clap::ArgAction::Set, value_parser = clap::value_parser!(bool))]
     cookie_secure: bool,
 
     #[arg(env, hide = true)]
