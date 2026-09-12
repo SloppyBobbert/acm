@@ -170,6 +170,7 @@ function ProblemSearchResults({ query }: { query: string }) {
     );
 
     if (problems) {
+        if (problems.length === 0) return <p>No problems found.</p>;
         return <ProblemList problems={problems} />;
     } else {
         return <ListLoading />;
@@ -192,14 +193,16 @@ function ProblemInfiniteResults({ difficulty, showCompetitionProblems, sortBy }:
         </ErrorBox>
     );
 
+    if (data?.[0]?.length === 0) return <p>No problems found.</p>;
+
     return <>
         {!data ? <ListLoading /> : data.map((problems, i) => <ProblemList key={i} problems={problems} />)}
 
-        <LoadingButton
+        {data?.[data.length - 1]?.length !== 0 && <LoadingButton
             loading={isValidating}
             className="rounded-full bg-neutral-200 hover:bg-neutral-300 px-6 py-3 transition-colors mx-auto dark:hover:bg-neutral-700 dark:bg-neutral-800"
             onClick={() => setSize(size + 1)}
-        >Load more</LoadingButton>
+        >Load more</LoadingButton>}
     </>;
 }
 

@@ -1,3 +1,5 @@
+export type FetchError = Error & { status?: number };
+
 export const fetcher = async (url: string) => {
   const res = await fetch(url, {
     method: "GET",
@@ -5,7 +7,7 @@ export const fetcher = async (url: string) => {
   });
 
   if (!res.ok)
-    throw new Error("failed to make request");
+    throw Object.assign(new Error("failed to make request"), { status: res.status });
 
   return await res.json();
 }
