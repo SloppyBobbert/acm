@@ -30,7 +30,8 @@ function component(file, extra = '') {
     },
     useEffect(effect) { h.cursor++; h.effects.push(effect); },
   };
-  const swr = key => { h.keys.push(key); return { data: user }; };
+  h.fetchers = [];
+  const swr = (key, fetcher) => { h.keys.push(key); h.fetchers.push(fetcher); return { data: user }; };
   swr.useSWRConfig = () => ({ mutate: key => { h.mutations.push(key); return Promise.resolve(); } });
   h.response = { ok: true, json: async () => ({}) };
   h.requests = [];
@@ -56,7 +57,7 @@ function component(file, extra = '') {
       if (name === 'react/jsx-runtime') return { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: 'fragment' };
       if (name === 'next/router') return { useRouter: () => h.router };
       if (name === 'swr') return swr;
-      if (name.endsWith('/utils/fetcher')) return { api_url: value => 'api:' + value, fetcher() {} };
+      if (name.endsWith('/utils/fetcher')) return { api_url: value => 'api:' + value, fetcher: url => h.requests.push([url]) };
       if (name.endsWith('/utils/state')) return { useSession: select => select({ setError: (...args) => h.errors.push(args) }) };
       return name;
     },
@@ -225,4 +226,42 @@ test('closed dashboard does not claim that unloaded lists are empty', () => {
 test('non-editor scrollbars remain visible', () => {
   const css = readFileSync(path.join(root, 'styles/globals.css'), 'utf8');
   assert.doesNotMatch(css, /\.featured-problem-container\s+\*/);
+});
+
+test('problem filter labels target their own controls and search has a name', () => {
+  const h = component('pages/problems/index.tsx');
+  find(h.render(), node => node.type === 'button' && node.props.children === 'Filters').props.onClick();
+  const tree = h.render();
+  for (const [label, id] of [['Easy', 'easy'], ['Medium', 'medium'], ['Hard', 'hard'], ['Newest', 'newest'], ['Oldest', 'oldest'], ['Show competition problems', 'competition-problems']]) {
+    assert.equal(find(tree, node => node.type === 'label' && node.props.children === label)?.props.htmlFor, id);
+    assert.equal(find(tree, node => node.type === 'input' && node.props.id === id)?.type, 'input');
+  }
+  assert.ok(find(tree, node => node.type === 'input' && node.props['aria-label'] === 'Search problems'));
+});
+
+test('difficulty checkmarks follow filter state after closing and reopening', () => {
+  const h = component('pages/problems/index.tsx');
+  const toggle = () => find(h.render(), node => node.type === 'button' && node.props.children === 'Filters').props.onClick();
+  toggle();
+  for (const id of ['easy', 'medium', 'hard']) {
+    const control = find(h.render(), node => node.type === 'input' && node.props.id === id);
+    assert.equal(control.props.checked, false);
+    control.props.onChange();
+  }
+  toggle(); toggle();
+  for (const id of ['easy', 'medium', 'hard']) {
+    assert.equal(find(h.render(), node => node.type === 'input' && node.props.id === id).props.checked, true);
+  }
+});
+
+test('problem search preserves punctuation and cannot change other URL parameters', () => {
+  const h = component('pages/problems/index.tsx', '\nexports.ProblemSearchResults = ProblemSearchResults;');
+  for (const query of ['C++', 'a&count=500', 'name#part', 'résumé 100%']) {
+    h.render(h.exports.ProblemSearchResults, { query });
+    h.fetchers.at(-1)();
+    const url = new URL(h.requests.at(-1)[0]);
+    assert.equal(url.searchParams.get('query'), query);
+    assert.equal(url.searchParams.get('count'), '10');
+    assert.equal(url.searchParams.size, 2);
+  }
 });
