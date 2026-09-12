@@ -20,6 +20,8 @@ DEV_ENV_FILE="$DEMO_DIR/demo.env" ./scripts/dev-local.sh
 
 Open **http://127.0.0.1:3000**, not `localhost`. The script builds the API with offline SQLx metadata and applies migrations at startup. `DEV_START_RAMIEL=false` skips the runner; it does not replace it. Logs are in `.local/logs/`.
 
+If you change `FRONTEND_PORT`, also update `FRONTEND_ORIGIN` and `DISCORD_REDIRECT_URI` in `$DEMO_DIR/demo.env`. The copied `.env.example` fixes both values at port 3000. For example, port 3101 needs `http://127.0.0.1:3101` and `http://127.0.0.1:3101/auth/discord`. Alternatively, omit both variables from the file and unset them in the shell so the script derives them. Update the registered Discord redirect and the browser URLs below to match. No change is needed for the default port 3000 procedure.
+
 For later runs, set `DEMO_DIR` to the saved path and repeat only the last command. Do not copy the example again. Stop with Ctrl-C. No step deletes or replaces the database.
 
 Check the API in another terminal:
