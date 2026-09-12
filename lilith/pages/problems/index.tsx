@@ -156,7 +156,7 @@ export function ProblemList({ problems, show_team_status, show_difficulty }: { p
 function ProblemSearchResults({ query }: { query: string }) {
     const { data: problems, error } = useSWR<Problem[]>(
         "PROBLEMS_QUERY",
-        () => fetcher(api_url(`/problems?query=${query}&count=10`))
+        () => fetcher(api_url(`/problems?query=${encodeURIComponent(query)}&count=10`))
     );
 
     useEffect(() => {
@@ -234,7 +234,7 @@ const ProblemListPage: NextPage = () => {
                     </button>
 
                     <div className="col-start-2 col-end-5 focus-within:outline focus-within:outline-2 focus-within:border-neutral-200 focus-within:outline-neutral-200 border-neutral-100 dark:border-neutral-800 border rounded-full bg-white dark:bg-black dark:text-white overflow-hidden h-10 flex">
-                        <input className="outline-0 w-full ml-4 h-full dark:bg-black" value={query} onChange={e => setQuery(e.target.value)} />
+                        <input aria-label="Search problems" className="outline-0 w-full ml-4 h-full dark:bg-black" value={query} onChange={e => setQuery(e.target.value)} />
 
                         <div className="h-10 aspect-square inline-flex items-center justify-center">
                             <svg className="w-4 dark:fill-white dark:stroke-white" enableBackground="new 0 0 32 32" id="Glyph" version="1.1" viewBox="0 0 32 32"><path d="M27.414,24.586l-5.077-5.077C23.386,17.928,24,16.035,24,14c0-5.514-4.486-10-10-10S4,8.486,4,14  s4.486,10,10,10c2.035,0,3.928-0.614,5.509-1.663l5.077,5.077c0.78,0.781,2.048,0.781,2.828,0  C28.195,26.633,28.195,25.367,27.414,24.586z M7,14c0-3.86,3.14-7,7-7s7,3.14,7,7s-3.14,7-7,7S7,17.86,7,14z" id="XMLID_223_" /></svg>
@@ -255,18 +255,18 @@ const ProblemListPage: NextPage = () => {
                         <span className="font-bold mb-2">Difficulty</span>
 
                         <div className="flex items-center gap-2">
-                            <input id="easy" type="checkbox" value={difficulty & 1} onChange={() => setDifficulty(difficulty ^ 1)} />
+                            <input id="easy" type="checkbox" checked={(difficulty & 1) !== 0} onChange={() => setDifficulty(difficulty ^ 1)} />
                             <label htmlFor="easy">Easy</label>
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <input id="medium" type="checkbox" value={difficulty & 2} onChange={() => setDifficulty(difficulty ^ 2)} />
+                            <input id="medium" type="checkbox" checked={(difficulty & 2) !== 0} onChange={() => setDifficulty(difficulty ^ 2)} />
                             <label htmlFor="medium">Medium</label>
                         </div>
 
                         <div className="flex items-center gap-2">
-                            <input id="hard" type="checkbox" value={difficulty & 4} onChange={() => setDifficulty(difficulty ^ 4)} />
-                            <label htmlFor="medium">Hard</label>
+                            <input id="hard" type="checkbox" checked={(difficulty & 4) !== 0} onChange={() => setDifficulty(difficulty ^ 4)} />
+                            <label htmlFor="hard">Hard</label>
                         </div>
                     </div>
 
@@ -274,8 +274,8 @@ const ProblemListPage: NextPage = () => {
                         <span className="font-bold">Misc</span>
 
                         <div className="flex items-center gap-2">
-                            <input type="checkbox" name="time" checked={showCompetitionProblems} onChange={() => setShowCompetitionProblems(!showCompetitionProblems)} />
-                            Show competition problems
+                            <input id="competition-problems" type="checkbox" checked={showCompetitionProblems} onChange={() => setShowCompetitionProblems(!showCompetitionProblems)} />
+                            <label htmlFor="competition-problems">Show competition problems</label>
                         </div>
                     </div>
 
@@ -284,7 +284,7 @@ const ProblemListPage: NextPage = () => {
 
                         <div className="flex items-center gap-2">
                             <input id="newest" type="radio" name="sort-by" checked={sortBy == "Newest"} onChange={() => setSortBy("Newest")} />
-                            <label htmlFor="oldest">Newest</label>
+                            <label htmlFor="newest">Newest</label>
                         </div>
 
                         <div className="flex items-center gap-2">
