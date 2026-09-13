@@ -1,0 +1,13 @@
+{
+  "title": "Practice: Greatest common divisor",
+  "description": "Return the greatest common divisor of a and b: the largest positive integer that divides both numbers without a remainder. Use function arguments, not stdin. Constraints: 0 <= a, b <= 1000000, and at least one argument is positive. If one argument is zero, return the other.\n\nExamples: (54, 24) -> 6; (7, 13) -> 1; (0, 9) -> 9.\n",
+  "reference": "int greatest_common_divisor(int a, int b) { while (b != 0) { int remainder = a % b; a = b; b = remainder; } return a; }\n",
+  "template": "int greatest_common_divisor(int a, int b) {\n    // Return the greatest common divisor.\n    return 0;\n}\n",
+  "tests": [
+    { "index": 0, "input": { "name": "greatest_common_divisor", "arguments": [{ "Int": { "Single": 54 } }, { "Int": { "Single": 24 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 6 } }, "max_fuel": null },
+    { "index": 1, "input": { "name": "greatest_common_divisor", "arguments": [{ "Int": { "Single": 7 } }, { "Int": { "Single": 13 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 1 } }, "max_fuel": null },
+    { "index": 2, "input": { "name": "greatest_common_divisor", "arguments": [{ "Int": { "Single": 0 } }, { "Int": { "Single": 9 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 9 } }, "max_fuel": null },
+    { "index": 3, "input": { "name": "greatest_common_divisor", "arguments": [{ "Int": { "Single": 9 } }, { "Int": { "Single": 0 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 9 } }, "max_fuel": null },
+    { "index": 4, "input": { "name": "greatest_common_divisor", "arguments": [{ "Int": { "Single": 1000000 } }, { "Int": { "Single": 1000000 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 1000000 } }, "max_fuel": null }
+  ]
+}

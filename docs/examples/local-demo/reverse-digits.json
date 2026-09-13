@@ -1,0 +1,13 @@
+{
+  "title": "Practice: Reverse the digits",
+  "description": "Reverse the decimal digits of n and return the result as an integer. Use a function argument, not stdin. Constraint: 0 <= n <= 1000000000. Discard leading zeros in the result.\n\nExamples: 123 -> 321; 1200 -> 21; 0 -> 0.\n",
+  "reference": "int reverse_digits(int n) { int result = 0; while (n > 0) { result = result * 10 + n % 10; n /= 10; } return result; }\n",
+  "template": "int reverse_digits(int n) {\n    // Return the reversed number.\n    return 0;\n}\n",
+  "tests": [
+    { "index": 0, "input": { "name": "reverse_digits", "arguments": [{ "Int": { "Single": 0 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 0 } }, "max_fuel": null },
+    { "index": 1, "input": { "name": "reverse_digits", "arguments": [{ "Int": { "Single": 123 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 321 } }, "max_fuel": null },
+    { "index": 2, "input": { "name": "reverse_digits", "arguments": [{ "Int": { "Single": 1200 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 21 } }, "max_fuel": null },
+    { "index": 3, "input": { "name": "reverse_digits", "arguments": [{ "Int": { "Single": 1000000000 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 1 } }, "max_fuel": null },
+    { "index": 4, "input": { "name": "reverse_digits", "arguments": [{ "Int": { "Single": 999999999 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 999999999 } }, "max_fuel": null }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "title": "Practice: Fibonacci number",
+  "description": "Return F(n), where F(0) = 0, F(1) = 1, and F(n) = F(n - 1) + F(n - 2) for n >= 2. Use a function argument, not stdin. Constraint: 0 <= n <= 30.\n\nExamples: 0 -> 0; 1 -> 1; 10 -> 55.\n",
+  "reference": "int fibonacci(int n) { int a = 0; int b = 1; for (int i = 0; i < n; ++i) { int next = a + b; a = b; b = next; } return a; }\n",
+  "template": "int fibonacci(int n) {\n    // Return F(n).\n    return 0;\n}\n",
+  "tests": [
+    { "index": 0, "input": { "name": "fibonacci", "arguments": [{ "Int": { "Single": 0 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 0 } }, "max_fuel": null },
+    { "index": 1, "input": { "name": "fibonacci", "arguments": [{ "Int": { "Single": 1 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 1 } }, "max_fuel": null },
+    { "index": 2, "input": { "name": "fibonacci", "arguments": [{ "Int": { "Single": 2 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 1 } }, "max_fuel": null },
+    { "index": 3, "input": { "name": "fibonacci", "arguments": [{ "Int": { "Single": 10 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 55 } }, "max_fuel": null },
+    { "index": 4, "input": { "name": "fibonacci", "arguments": [{ "Int": { "Single": 30 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 832040 } }, "max_fuel": null }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "title": "Practice: Sum the digits",
+  "description": "Return the sum of the decimal digits of n. Use a function argument, not stdin. Constraint: 0 <= n <= 1000000000. For n = 0, return 0.\n\nExamples: 507 -> 12; 999 -> 27; 0 -> 0.\n",
+  "reference": "int digit_sum(int n) { int sum = 0; while (n > 0) { sum += n % 10; n /= 10; } return sum; }\n",
+  "template": "int digit_sum(int n) {\n    // Return the sum of the digits.\n    return 0;\n}\n",
+  "tests": [
+    { "index": 0, "input": { "name": "digit_sum", "arguments": [{ "Int": { "Single": 0 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 0 } }, "max_fuel": null },
+    { "index": 1, "input": { "name": "digit_sum", "arguments": [{ "Int": { "Single": 507 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 12 } }, "max_fuel": null },
+    { "index": 2, "input": { "name": "digit_sum", "arguments": [{ "Int": { "Single": 999 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 27 } }, "max_fuel": null },
+    { "index": 3, "input": { "name": "digit_sum", "arguments": [{ "Int": { "Single": 1000000000 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 1 } }, "max_fuel": null }
+  ]
+}
