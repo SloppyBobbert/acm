@@ -47,6 +47,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - uses: docker/setup-compose-action@2fe291b7677a45ee1269ec56a42604c143505e7e # v1
+        with:
+          version: v2.39.4
       - name: Build native runner
         env:
           EXPECTED_MACHINE: ${{ matrix.machine }}
@@ -160,6 +163,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - uses: docker/setup-compose-action@2fe291b7677a45ee1269ec56a42604c143505e7e # v1
+        with:
+          version: v2.39.4
       - name: Validate local Compose configuration
         run: python3 scripts/tests/test_local_compose.py
       - name: Validate production Compose configuration
