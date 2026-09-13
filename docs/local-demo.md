@@ -2,9 +2,63 @@
 
 No hosting account is needed. Use the real API and frontend. Do not use simulated compiler responses outside tests.
 
-## 1. Start an isolated local database
+## 1. Start locally
 
-Requirements: Rust/Cargo, Node.js with Corepack, and SQLite. Run from the repository root. Keep ports 3000 and 8081 free.
+### Use an existing root `.env` on macOS
+
+This path starts the API and frontend directly on your Mac, without Docker. It does not start Ramiel. Run/Submit need a separately managed, supported runner.
+
+1. Check the prerequisites: a current stable Rust toolchain, Node.js with Corepack, and the macOS C/C++ build tools.
+
+   ```sh
+   cargo --version
+   node --version
+   corepack --version
+   clang --version
+   ```
+
+2. Open a terminal in the repository root. Keep ports 3000 and 8081 free. Stop an existing local session before you start another.
+3. Keep your existing `.env` secrets. Set these non-secret values in the root `.env`:
+
+   ```dotenv
+   DEV_START_RAMIEL=false
+   API_HOSTNAME=127.0.0.1
+   PORT=8081
+   FRONTEND_PORT=3000
+   FRONTEND_ORIGIN=http://127.0.0.1:3000
+   DISCORD_REDIRECT_URI=http://127.0.0.1:3000/auth/discord
+   COOKIE_SECURE=false
+   NEXT_PUBLIC_API_URL=http://127.0.0.1:8081
+   NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8081/ws
+   ```
+
+   Keep `DATABASE_URL` if it points to your existing local database. For a new database in the repository root, use `DATABASE_URL=sqlite://./db.sqlite`. Do not use a production database. The API applies migrations at startup.
+
+   Login requires valid `DISCORD_CLIENT_ID`, `DISCORD_SECRET`, and `JWT_SECRET` values. Register `http://127.0.0.1:3000/auth/discord` as a redirect URI in your Discord application. Keep `.env` untracked. Never put secrets in `NEXT_PUBLIC_*` variables.
+
+4. Start the app:
+
+   ```sh
+   DEV_ENV_FILE="$PWD/.env" SQLX_OFFLINE=true ./scripts/dev-local.sh
+   ```
+
+   The script loads `.env`, builds the API, and creates the SQLite file if needed. It installs frontend dependencies if `lilith/node_modules` is absent. The first run can download dependencies and use several GB of disk space. Cargo uses crates.io and any Git sources in `Cargo.lock`. Yarn uses the package sources in `lilith/yarn.lock`. `SQLX_OFFLINE` disables database access during SQLx compilation, not network downloads.
+
+5. Open **<http://127.0.0.1:3000>**, not `localhost`. Check the API from another terminal:
+
+   ```sh
+   curl --fail http://127.0.0.1:8081/healthz
+   ```
+
+   API health does not prove login or code execution. API logs are in `.local/logs/server.log`. Frontend logs appear in the startup terminal.
+
+6. Stop the app with Ctrl-C. Repeat step 4 for later starts.
+
+A new database contains no practice problems. Continue with section 2 to import them after login. Files on GitHub do not populate the database automatically.
+
+### Alternative: use an isolated local database
+
+Requirements: Rust/Cargo, Node.js with Corepack, and SQLite. Run from the repository root. Keep ports 3000 and 8081 free. Use this alternative instead of the root `.env` procedure above.
 
 Create a new directory once. This preserves the root `.env`, existing databases, and local tool files:
 
@@ -18,7 +72,7 @@ printf 'Keep this path for later runs: %s\n' "$DEMO_DIR"
 DEV_ENV_FILE="$DEMO_DIR/demo.env" ./scripts/dev-local.sh
 ```
 
-Open **http://127.0.0.1:3000**, not `localhost`. The script builds the API with offline SQLx metadata and applies migrations at startup. `DEV_START_RAMIEL=false` skips the runner; it does not replace it. Logs are in `.local/logs/`.
+Open **<http://127.0.0.1:3000>**, not `localhost`. The script builds the API with offline SQLx metadata and applies migrations at startup. `DEV_START_RAMIEL=false` skips the runner; it does not replace it. Logs are in `.local/logs/`.
 
 If you change `FRONTEND_PORT`, also update `FRONTEND_ORIGIN` and `DISCORD_REDIRECT_URI` in `$DEMO_DIR/demo.env`. The copied `.env.example` fixes both values at port 3000. For example, port 3101 needs `http://127.0.0.1:3101` and `http://127.0.0.1:3101/auth/discord`. Alternatively, omit both variables from the file and unset them in the shell so the script derives them. Update the registered Discord redirect and the browser URLs below to match. No change is needed for the default port 3000 procedure.
 
@@ -37,9 +91,9 @@ A successful response proves only API health. It does not prove compilation, exe
 The existing `POST /problems/new` path accepts complete tests and expected results. A new seed command is not needed. It requires an officer or administrator. Sample import remains blocked until a real login is available.
 
 1. Register a development Discord OAuth application with redirect URI `http://127.0.0.1:3000/auth/discord`.
-2. Set its client ID and secret in the private `$DEMO_DIR/demo.env`. Do not put secrets in public frontend variables or commit the file.
+2. Set its client ID and secret in your chosen environment file: root `.env` or isolated `$DEMO_DIR/demo.env`. Do not put secrets in public frontend variables or commit the file.
 3. Restart the local script, then sign in with Discord.
-4. For the first administrator only, verify your Discord user ID and use the existing bootstrap tool:
+4. For the first administrator only, verify your Discord user ID. Use the existing bootstrap tool with the same database as the API. For the isolated database:
 
    ```sh
    SQLX_OFFLINE=true cargo run --locked -p server --bin bootstrap-admin -- \
@@ -47,9 +101,11 @@ The existing `POST /problems/new` path accepts complete tests and expected resul
      --discord-id '<your-verified-discord-user-id>'
    ```
 
+   For the root `db.sqlite` database, replace the database URL above with `"sqlite://./db.sqlite?mode=rw"`. If your `.env` uses a different local database path, use that path instead. Do not run both commands.
+
    This promotes an existing user. It creates no user and refuses an existing administrator. Sign out and back in.
 
-5. Open the browser console on `http://127.0.0.1:3000`. Run this local-only call to the existing creation API. Select **both JSON files** from `docs/examples/local-demo/`:
+5. Open the browser console on `http://127.0.0.1:3000`. Run this local-only call to the existing creation API. Select `add.json` and `larger.json` from `docs/examples/local-demo/`:
 
    ```js
    if (location.origin !== 'http://127.0.0.1:3000') throw new Error('Open the local demo first.');
