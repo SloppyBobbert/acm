@@ -29,6 +29,7 @@ function component(file, extra = '') {
       return h.values[i];
     },
     useEffect(effect) { h.cursor++; h.effects.push(effect); },
+    useContext: () => 1,
   };
   h.fetchers = [];
   h.swrResult = { data: user };
@@ -60,6 +61,8 @@ function component(file, extra = '') {
       if (name === 'next/router') return { useRouter: () => h.router };
       if (name === 'swr') return swr;
       if (name === 'swr/infinite') return () => h.infiniteResult;
+      if (name === './error' || name.endsWith('/submission/error')) return component('components/problem/submission/error.tsx').exports;
+      if (name === 'moment') return require('moment');
       if (name.endsWith('/utils/fetcher')) return { api_url: value => 'api:' + value, fetcher: url => h.requests.push([url]) };
       if (name.endsWith('/utils/state')) return { useSession: select => select({ setError: (...args) => h.errors.push(args) }) };
       return name;
@@ -334,3 +337,85 @@ test('fetcher preserves HTTP status without changing request credentials or netw
     assert.equal(options.credentials, 'include');
   }
 });
+
+for (const [label, file, extra, exported] of [
+  ['profile submissions', 'pages/user/[username].tsx', '\nexports.RecentSubmissions = RecentSubmissions;', 'RecentSubmissions'],
+  ['problem history', 'components/problem/submission/history.tsx', '', 'default'],
+]) {
+  test(`${label} stops pagination at an empty page and preserves earlier rows`, () => {
+    const h = component(file, extra);
+    const row = { id: 91 };
+    for (const pages of [[[]], [[row], []]]) {
+      h.infiniteResult.data = pages;
+      const tree = h.render(h.exports[exported], { username: 'demo' });
+      assert.equal(find(tree, node => node.props?.children === 'Load more'), undefined);
+      if (pages.length === 1) assert.ok(find(tree, node => node.props?.children === 'No submissions yet.'));
+      else assert.ok(find(tree, node => node.props?.id === row.id));
+    }
+    h.infiniteResult.data = [[row]];
+    const sizes = [];
+    h.infiniteResult.setSize = size => sizes.push(size);
+    const button = find(h.render(h.exports[exported], { username: 'demo' }), node => node.props?.children === 'Load more');
+    assert.ok(button);
+    button.props.onClick();
+    assert.deepEqual(sizes, [2]);
+  });
+}
+
+test('scalar editor keeps non-scalar JSON editable without crashing', () => {
+  for (const text of ['null', '[]', '{"toString":null}']) {
+    const h = component('components/test-editor/index.tsx', '\nexports.SingleEditor = SingleEditor;');
+    const changes = [];
+    const props = { type: 'Int', value: 0, onChange: value => changes.push(value) };
+    const input = find(h.render(h.exports.SingleEditor, props), node => node.type === 'input');
+    input.props.onChange({ target: { value: text } });
+    const updated = find(h.render(h.exports.SingleEditor, props), node => node.type === 'input');
+    assert.equal(updated.props.value, text);
+    h.effects.forEach(effect => effect());
+    assert.equal(changes.at(-1), text);
+  }
+});
+
+test('scalar editor preserves numeric, boolean, character, and string values', () => {
+  for (const [type, text, expected] of [['Int', '-2', -2], ['Double', '-0.25', -0.25], ['Bool', 'false', false], ['Char', 'X', 'X'], ['String', 'null', 'null']]) {
+    const h = component('components/test-editor/index.tsx', '\nexports.SingleEditor = SingleEditor;');
+    const changes = [];
+    const props = { type, value: 0, onChange: value => changes.push(value) };
+    const input = find(h.render(h.exports.SingleEditor, props), node => ['input', 'textarea'].includes(node.type));
+    input.props.onChange({ target: { value: text } });
+    h.render(h.exports.SingleEditor, props);
+    h.effects.forEach(effect => effect());
+    assert.equal(changes.at(-1), expected);
+  }
+});
+
+for (const [index, label] of [[1, 'start'], [2, 'end']]) {
+  test(`cleared competition ${label} date blocks submission and allows correction`, async () => {
+    const h = component('pages/competitions/new.tsx');
+    h.response = { ok: true, json: async () => ({ id: 41 }) };
+    const inputs = () => {
+      const fields = [];
+      find(h.render(), node => { if (node.type === 'input') fields.push(node); return false; });
+      return fields;
+    };
+    const values = ['Test competition', '2026-10-01T12:00', '2026-10-01T13:00'];
+    values.forEach((value, i) => inputs()[i].props.onChange({ target: { value } }));
+    inputs()[index].props.onChange({ target: { value: '' } });
+    await find(h.render(), node => node.type === 'button').props.onClick();
+    assert.equal(h.requests.length, 0);
+    assert.deepEqual(h.errors.at(-1), ['Enter valid start and end dates.', true]);
+    assert.equal(inputs()[index].props.value, '');
+    assert.equal(inputs()[0].props.value, values[0]);
+    inputs()[index].props.onChange({ target: { value: values[index] } });
+    await find(h.render(), node => node.type === 'button').props.onClick();
+    assert.equal(h.requests.length, 1);
+    const [url, request] = h.requests[0];
+    assert.equal(url, 'api:/competitions/new');
+    assert.equal(request.method, 'POST');
+    assert.equal(request.credentials, 'include');
+    assert.deepEqual(JSON.parse(request.body), {
+      name: values[0], start: new Date(values[1]).toISOString().slice(0, -1), end: new Date(values[2]).toISOString().slice(0, -1),
+    });
+    assert.equal(h.routes.at(-1), '/competitions/41');
+  });
+}

@@ -139,7 +139,8 @@ function SingleEditor({ type, value, onChange }: SingleEditorProps) {
                     value={data.toString()}
                     onChange={(e) => {
                         try {
-                            setData(JSON.parse(e.target.value));
+                            const parsed = JSON.parse(e.target.value);
+                            setData(parsed !== null && typeof parsed !== "object" ? parsed : e.target.value);
                         } catch {
                             setData(e.target.value);
                         }

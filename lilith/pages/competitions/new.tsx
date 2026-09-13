@@ -15,6 +15,11 @@ const NewCompetitionPage: NextPage = () => {
   const setError = useSession((state) => state.setError);
 
   const submit = async () => {
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      setError("Enter valid start and end dates.", true);
+      return;
+    }
+
     const res: { id: number } | ServerError = await (await fetch(api_url("/competitions/new"), {
       method: "POST",
       headers: {
@@ -53,7 +58,7 @@ const NewCompetitionPage: NextPage = () => {
           <span>Start Date</span>
           <input
             type="datetime-local"
-            value={moment(start).format("yyyy-MM-DDTHH:mm")}
+            value={Number.isNaN(start.getTime()) ? "" : moment(start).format("yyyy-MM-DDTHH:mm")}
             onChange={(e) => setStart(new Date(e.target.value))}
             className="border-neutral-300 dark:border-neutral-700 border rounded p-2 bg-neutral-50 dark:bg-neutral-900 outline-0 transition-shadow focus:ring dark:ring-neutral-700 ring-neutral-300"
           />
@@ -61,7 +66,7 @@ const NewCompetitionPage: NextPage = () => {
           <span>End Date</span>
           <input
             type="datetime-local"
-            value={moment(end).format("yyyy-MM-DDTHH:mm")}
+            value={Number.isNaN(end.getTime()) ? "" : moment(end).format("yyyy-MM-DDTHH:mm")}
             onChange={(e) => setEnd(new Date(e.target.value))}
             className="border-neutral-300 dark:border-neutral-700 border rounded p-2 bg-neutral-50 dark:bg-neutral-900 outline-0 transition-shadow focus:ring dark:ring-neutral-700 ring-neutral-300"
           />
