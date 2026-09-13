@@ -1,0 +1,13 @@
+FROM node:22-bookworm-slim
+
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY lilith/package.json lilith/yarn.lock ./
+RUN corepack yarn@1.22.22 install --frozen-lockfile
+COPY --chown=node:node lilith/ ./
+RUN chown node:node /app
+
+USER node
+EXPOSE 3000
+CMD ["./node_modules/.bin/next", "dev", "-H", "0.0.0.0", "-p", "3000"]

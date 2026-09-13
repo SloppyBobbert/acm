@@ -4,10 +4,10 @@ Chico ACM is a programming-competition site. The Next.js frontend talks to the R
 
 ## Prerequisites
 
-- Rust and Cargo
-- Node.js with Corepack (the frontend uses Yarn Classic)
-- A native Linux amd64 runner host with Landlock ABI 3 or later. Use the Ramiel container for its compiler toolchains and isolation helper; see [runner requirements](crates/ramiel/README.md).
-- Docker Compose for the production stack
+- Docker with Linux containers and Compose 2.39.0 or later for local startup.
+- A native amd64 or arm64 Docker host with Landlock ABI 3 or later; see [runner requirements](crates/ramiel/README.md#docker-platform-support).
+- A development Discord application for login.
+- Rust/Cargo and Node.js with Corepack only if you develop outside Docker.
 
 ## Repository map
 
@@ -20,7 +20,21 @@ Chico ACM is a programming-competition site. The Next.js frontend talks to the R
 
 ## Local development
 
-The full local stack requires a supported Linux amd64 runner host. Apple Silicon/Rosetta cannot run the isolated runner. The frontend and API can run on a Mac, but submission acceptance needs the supported runner. Do not bypass compiler isolation.
+### Docker Compose
+
+With valid `JWT_SECRET`, `DISCORD_CLIENT_ID`, and `DISCORD_SECRET` values in your private root `.env`, run:
+
+```sh
+docker compose up --build
+```
+
+Open **<http://127.0.0.1:3000>**. Register `http://127.0.0.1:3000/auth/discord` in the Discord application. The stack starts the frontend, API, and isolated Ramiel runner. Apple Silicon uses native arm64 containers, not Rosetta. The database stays in a separate named volume.
+
+For later starts without code changes, use `docker compose up`. The first build downloads toolchains and dependencies and can take several minutes. See [first-run instructions, sample import, and data handling](docs/local-demo.md). Do not bypass compiler isolation on an unsupported Docker kernel.
+
+### Host development
+
+The existing host launcher uses an amd64 Docker fallback for Ramiel. Use Compose above for an all-native Apple Silicon stack. To run only the host frontend/API, set `DEV_START_RAMIEL=false`.
 
 Create local environment files from the checked-in examples. Supply development-only secrets; never commit either local file.
 
@@ -63,7 +77,7 @@ Ordinary Rust checks use checked-in SQLx metadata with `SQLX_OFFLINE=true`. At r
 
 Build production images on the deployment host with `compose.production.yml`; that Compose file is the canonical deployment source. `/opt/acm` and `/srv/acm` are recommended checkout locations, not the only locations. Another normalized absolute checkout path is allowed only when every path component is in the production trust lane: root-owned, non-symlinked, and not group- or world-writable. Use the operator toolkit in [deploy/README.md](deploy/README.md): run `sudo deploy/bootstrap-ubuntu.sh --check` before host changes. After bootstrap, use the root-run stable helpers, `sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)"` and `sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)"`, for lifecycle and manual database work. Bootstrap installs no backup scheduler; scheduled backups are deferred. CI validates changes but does not replace a host deployment.
 
-Ramiel requires native Linux amd64 with Landlock ABI 3 or later. Cross-building an amd64 image on Apple Silicon does not make its runner executable under Rosetta. Verify execution on a supported host.
+Production Ramiel remains configured for native Linux amd64 with Landlock ABI 3 or later. Local Compose also supports native arm64. Cross-building an amd64 image on Apple Silicon does not make its runner executable under Rosetta.
 
 Production Caddy replaces `X-Forwarded-For` with the directly observed client address. The API trusts only Caddy's fixed private Docker address when applying OAuth-start limits. If a CDN or load balancer is added, redesign and configure trusted-proxy handling; do not accept arbitrary forwarded-address chains.
 
@@ -73,7 +87,7 @@ See [deployment](deploy/README.md) for the production procedure.
 
 - A failing API health check usually means the API is not running or could not start because configuration, SQLite access, or migrations failed. Check `.local/logs/` locally or Compose logs in production.
 - Host-native Ramiel requires the compiler toolchains and Landlock helper described in [Ramiel](crates/ramiel/README.md). Use its container on a supported host.
-- Apple Silicon/Rosetta runner execution is unsupported; setting an amd64 platform does not remove this restriction.
+- Rosetta runner execution is unsupported. On Apple Silicon, use the native arm64 local Compose setup instead of forcing amd64.
 - Open the frontend at the exact configured `FRONTEND_ORIGIN`. `http://localhost:3000` and `http://127.0.0.1:3000` are different browser origins.
 - An empty database shows “No featured problem yet.” This differs from an API connection error.
 - `FRONTEND_ORIGIN` must be a complete `http` or `https` origin with no path or query.

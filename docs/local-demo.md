@@ -4,7 +4,47 @@ No hosting account is needed. Use the real API and frontend. Do not use simulate
 
 ## 1. Start locally
 
-### Use an existing root `.env` on macOS
+### Use Docker Compose with an existing root `.env`
+
+This is the complete local setup. It starts the frontend, API, and Ramiel without a host Rust or Node installation. Docker builds images for its native amd64 or arm64 architecture. The production setup remains separate in `compose.production.yml`.
+
+1. Start Docker Desktop with Linux containers, or Docker Engine on Linux. Use Docker Compose 2.39.0 or later. The Docker Linux kernel must enforce Landlock ABI 3 or later. Do not force amd64 emulation on an ARM64 machine.
+2. Open a terminal in the repository root. Stop any existing services on ports 3000 and 8081.
+3. Keep valid `JWT_SECRET`, `DISCORD_CLIENT_ID`, and `DISCORD_SECRET` values in the root `.env`. Register `http://127.0.0.1:3000/auth/discord` in your Discord application. Keep `.env` untracked.
+4. Start the app:
+
+   ```sh
+   docker compose up --build
+   ```
+
+   For later starts without code changes, use `docker compose up`. Use `--build` after code changes. The frontend uses development mode. Source files are copied into the image, not mounted from your checkout.
+
+   The first build downloads images and dependencies and can use several GB of disk space. Sources include Docker Hub (`node`, `rust`, and `debian`), Debian package repositories, crates.io, and the package sources in the lockfiles. The runner also downloads toolchains from Rust distribution servers and the WebAssembly WASI SDK release on GitHub.
+
+5. Open **<http://127.0.0.1:3000>**, not `localhost`. Check the API from another terminal:
+
+   ```sh
+   curl --fail http://127.0.0.1:8081/healthz
+   docker compose ps
+   ```
+
+6. Stop the app with Ctrl-C. To remove the stopped containers without removing the database, use `docker compose down`.
+
+**Data:** Compose uses the separate `acm-local_local_data` volume. It does not use your host `DATABASE_URL` or import an existing SQLite file. The API creates the database and applies migrations. Do not use `docker compose down --volumes` unless you intend to delete this database.
+
+**Configuration:** Compose reads only the three required secret/client values listed above. Local ports, browser URLs, the redirect URI, and cookie settings are fixed in `compose.yml`. The server uses `http://ramiel:8082` inside Docker. Browser requests use `http://127.0.0.1:8081`. No real environment file enters the build context.
+
+**Environment file elsewhere:** Use `docker compose --env-file /absolute/path/to/your.env up --build`. Use the same `--env-file` option for later Compose commands, including logs and administrator setup. Do not copy secrets into the repository to change their location.
+
+**Logs:** Use `docker compose logs --tail=100 server frontend ramiel`. Keep logs private if they contain application data. Do not share `docker compose config` output because it can contain secrets.
+
+**Runner:** Ramiel starts by default. The API waits for runner health, and the frontend waits for API health. The runner has no host port. Compiler isolation, a read-only root filesystem, and resource limits remain active. If isolation is unavailable, startup fails. Do not disable security controls to bypass this failure. See the [runner support matrix](../crates/ramiel/README.md#docker-platform-support) for platform evidence.
+
+For a startup check that waits for all services, use `docker compose up --build --detach --wait --wait-timeout 300`. The frontend health check waits for an actual page response. Initial builds can take much longer than subsequent starts.
+
+A new volume contains no users or problems. Continue with section 2 after a real Discord login. GitHub sample files do not populate the database automatically.
+
+### Alternative: use an existing root `.env` without Docker on macOS
 
 This path starts the API and frontend directly on your Mac, without Docker. It does not start Ramiel. Run/Submit need a separately managed, supported runner.
 
@@ -93,7 +133,17 @@ The existing `POST /problems/new` path accepts complete tests and expected resul
 1. Register a development Discord OAuth application with redirect URI `http://127.0.0.1:3000/auth/discord`.
 2. Set its client ID and secret in your chosen environment file: root `.env` or isolated `$DEMO_DIR/demo.env`. Do not put secrets in public frontend variables or commit the file.
 3. Restart the local script, then sign in with Discord.
-4. For the first administrator only, verify your Discord user ID. Use the existing bootstrap tool with the same database as the API. For the isolated database:
+4. For the first administrator only, verify your Discord user ID. Use the existing bootstrap tool with the same database as the API.
+
+   For Docker Compose:
+
+   ```sh
+   docker compose exec server bootstrap-admin \
+     --database-url 'sqlite:///var/lib/acm/db.sqlite?mode=rw' \
+     --discord-id '<your-verified-discord-user-id>'
+   ```
+
+   For the isolated host database:
 
    ```sh
    SQLX_OFFLINE=true cargo run --locked -p server --bin bootstrap-admin -- \
@@ -149,11 +199,11 @@ For a repeatable browser check without login or a populated database, use the ex
 Real logged-in Run/Submit acceptance still requires:
 
 - A real development Discord login and the imported local samples.
-- Native Linux amd64 with Landlock ABI 3 or later, plus the documented [runner toolchains and helper](../crates/ramiel/README.md).
+- A native amd64 or arm64 Linux container with Landlock ABI 3 or later, plus the documented [runner toolchains and helper](../crates/ramiel/README.md).
 - Ramiel reachable at `RAMIEL_URL`. Set `DEV_START_RAMIEL=true` to let the local script start it on a supported host. Keep it false if a separately managed supported runner is already available.
 - Successful and deliberately invalid C++ and Rust through **both Run and Submit**, with expected test results and visible compiler errors.
 
-Apple Silicon, Rosetta, image builds, `/healthz`, and simulated responses cannot satisfy that final acceptance. Do not change isolation, flags, or authentication to make a demo pass.
+Image builds, `/healthz`, and simulated responses alone cannot satisfy that final acceptance. Apple Silicon must use native arm64 containers, not Rosetta. Do not change isolation, flags, or authentication to make a demo pass.
 
 ## Verification record
 

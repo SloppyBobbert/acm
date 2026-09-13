@@ -5,6 +5,8 @@
 .next
 target
 db.sqlite*
+**/.env*
+.envsitter
 .env
 .env.local
 /deploy/.env.production

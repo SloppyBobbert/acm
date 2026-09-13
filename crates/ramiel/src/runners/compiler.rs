@@ -18,7 +18,7 @@ pub fn initialize() -> io::Result<()> {
             )
         })?;
     if !output.status.success() {
-        return Err(io::Error::other("Compiler filesystem isolation is unavailable. Native Linux amd64 with Landlock ABI 3 or newer is required. Unrestricted compilation is disabled."));
+        return Err(io::Error::other("Compiler filesystem isolation is unavailable. Native Linux amd64 or arm64 with Landlock ABI 3 or newer is required. Use a supported Docker Linux kernel without CPU emulation. Unrestricted compilation is disabled."));
     }
     Ok(())
 }
