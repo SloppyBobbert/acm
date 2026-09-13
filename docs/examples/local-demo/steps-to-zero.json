@@ -1,0 +1,13 @@
+{
+  "title": "Practice: Steps to zero",
+  "description": "Count the steps needed to reduce n to zero. At each step, divide n by 2 if it is even. Otherwise, subtract 1. Stop at zero. Use a function argument, not stdin. Constraint: 0 <= n <= 1000000.\n\nExamples: 0 -> 0; 8 -> 4; 14 -> 6. For 14, the sequence is 14, 7, 6, 3, 2, 1, 0.\n",
+  "reference": "int steps_to_zero(int n) { int steps = 0; while (n > 0) { n = n % 2 == 0 ? n / 2 : n - 1; ++steps; } return steps; }\n",
+  "template": "int steps_to_zero(int n) {\n    // Return the number of steps.\n    return 0;\n}\n",
+  "tests": [
+    { "index": 0, "input": { "name": "steps_to_zero", "arguments": [{ "Int": { "Single": 0 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 0 } }, "max_fuel": null },
+    { "index": 1, "input": { "name": "steps_to_zero", "arguments": [{ "Int": { "Single": 1 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 1 } }, "max_fuel": null },
+    { "index": 2, "input": { "name": "steps_to_zero", "arguments": [{ "Int": { "Single": 8 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 4 } }, "max_fuel": null },
+    { "index": 3, "input": { "name": "steps_to_zero", "arguments": [{ "Int": { "Single": 14 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 6 } }, "max_fuel": null },
+    { "index": 4, "input": { "name": "steps_to_zero", "arguments": [{ "Int": { "Single": 1000000 } }], "return_type": { "Int": "Single" } }, "expected_output": { "Int": { "Single": 26 } }, "max_fuel": null }
+  ]
+}

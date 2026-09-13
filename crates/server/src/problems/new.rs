@@ -139,6 +139,11 @@ mod tests {
         for json in [
             include_str!("../../../../docs/examples/local-demo/add.json"),
             include_str!("../../../../docs/examples/local-demo/larger.json"),
+            include_str!("../../../../docs/examples/local-demo/digit-sum.json"),
+            include_str!("../../../../docs/examples/local-demo/reverse-digits.json"),
+            include_str!("../../../../docs/examples/local-demo/greatest-common-divisor.json"),
+            include_str!("../../../../docs/examples/local-demo/fibonacci.json"),
+            include_str!("../../../../docs/examples/local-demo/steps-to-zero.json"),
         ] {
             for auth in [Auth::LoggedOut, Auth::Member] {
                 assert!(new(
@@ -190,6 +195,6 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!(count, 2);
+        assert_eq!(count, 7);
     }
 }

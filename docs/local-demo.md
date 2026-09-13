@@ -71,7 +71,9 @@ The existing `POST /problems/new` path accepts complete tests and expected resul
 
 Import once per demo database. The endpoint appends problems; it does not replace existing ones. If an import partly fails, select only the file that failed. Never target a production API or database. This procedure uses the browser's real session cookie; do not export cookies or manufacture a token.
 
-The two samples cover addition and comparison, including negative and equal inputs. Each description contains complete C++ and Rust answers and three expected results. The creation API stores a C++ reference and template; the existing Rust-template endpoint derives the Rust signature from the tests. Inputs and outputs are typed function values, not stdin/stdout. Fuel values are unset; existing runner defaults apply. These examples do not establish resource limits or compiler acceptance.
+For five more practice problems, repeat the import step and select only `digit-sum.json`, `reverse-digits.json`, `greatest-common-divisor.json`, `fibonacci.json`, and `steps-to-zero.json`. These are original exercises, not copied LeetCode content. Each file includes constraints, a C++ template, a reference answer, and expected test results. Pushing these files to GitHub does not import them into a database.
+
+The two initial samples cover addition and comparison, including negative and equal inputs. Each description contains complete C++ and Rust answers and three expected results. The creation API stores a C++ reference and template; the existing Rust-template endpoint derives the Rust signature from the tests. Inputs and outputs are typed function values, not stdin/stdout. Fuel values are unset; existing runner defaults apply. These examples do not establish resource limits or compiler acceptance.
 
 ## 3. Repeat the browser demo
 
