@@ -4,7 +4,7 @@ import useSWRInfinite from "swr/infinite";
 import { ShareButton } from ".";
 import { ProblemIDContext } from "..";
 import { api_url, fetcher } from "../../../utils/fetcher";
-import { Submission, useStore } from "../../../utils/state";
+import { Submission, useSession, useStore } from "../../../utils/state";
 import { timeFormat } from "../../../utils/time";
 import LoadingButton from "../../loading-button";
 import { isServerError, RunnerError, ServerError } from "./error";
@@ -13,12 +13,23 @@ function LoadHistoryButton({ id }: { id: number }): JSX.Element {
     const problemId = useContext(ProblemIDContext)!;
     const [loading, setLoading] = useState(false);
     const setProblemImpl = useStore((store) => store.setProblemImpl);
+    const setError = useSession((store) => store.setError);
 
     const submit = async () => {
         setLoading(true);
-        let data: Submission = await (await fetch(api_url(`/submissions/${id}`))).json();
-        setProblemImpl(problemId, data.code, data.language ?? "cpp");
-        setLoading(false);
+        try {
+            const response = await fetch(api_url(`/submissions/${id}`));
+            if (!response.ok) throw new Error("Submission request failed");
+            const data: Submission = await response.json();
+            if (typeof data?.code !== "string" || (data.language != null && data.language !== "cpp" && data.language !== "rust")) {
+                throw new Error("Invalid submission response");
+            }
+            setProblemImpl(problemId, data.code, data.language ?? "cpp");
+        } catch {
+            setError("Could not load submission. Try again.", true);
+        } finally {
+            setLoading(false);
+        }
     }
 
     return (
