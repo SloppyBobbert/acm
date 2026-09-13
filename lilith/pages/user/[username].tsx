@@ -154,11 +154,11 @@ function RecentSubmissions({ username }: { username: string }): JSX.Element {
         <SubmissionEntry key={submission.id} {...submission} />
       ))}
 
-      <LoadingButton
+      {submissions[submissions.length - 1]?.length !== 0 && <LoadingButton
         loading={isValidating}
         className="btn-secondary mx-auto"
         onClick={() => setSize(size + 1)}
-      >Load more</LoadingButton>
+      >Load more</LoadingButton>}
     </div>
   );
 }

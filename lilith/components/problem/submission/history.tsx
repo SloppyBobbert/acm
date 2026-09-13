@@ -116,11 +116,13 @@ export default function SubmissionHistory(): JSX.Element {
                     <HistoryEntry key={i} {...submission} />))
             }
 
-            <LoadingButton
+            {data?.[0]?.length === 0 && <p className="p-4">No submissions yet.</p>}
+
+            {data?.[data.length - 1]?.length !== 0 && <LoadingButton
                 loading={isValidating}
                 className="mx-auto my-4 rounded-full bg-neutral-200 hover:bg-neutral-300 px-6 py-3 transition-colors mx-auto dark:hover:bg-neutral-700 dark:bg-neutral-800"
                 onClick={() => setSize(size + 1)}
-            >Load more</LoadingButton>
+            >Load more</LoadingButton>}
         </div>
     );
 }
