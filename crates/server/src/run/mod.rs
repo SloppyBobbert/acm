@@ -93,6 +93,11 @@ pub trait Queueable: Send + Sync {
     fn problem_id(&self) -> i64;
 }
 
+fn queue_position(job_id: u64, processing_job: u64) -> u64 {
+    // Concurrent jobs can start out of ID order; this is an estimate, not a queue length.
+    job_id.saturating_sub(processing_job)
+}
+
 // Adds a job to the job queue
 async fn add_job(
     user_id: i64,
@@ -109,7 +114,7 @@ async fn add_job(
         id: job_id,
         user_id,
 
-        queue_position: job_id - PROCESSING_JOB.load(Ordering::SeqCst),
+        queue_position: queue_position(job_id, PROCESSING_JOB.load(Ordering::SeqCst)),
         job_type: queue_item.job_type(),
         problem_id: queue_item.problem_id(),
         response: None,
@@ -140,9 +145,7 @@ pub async fn check_job(
         if job.user_id == claims.user_id {
             let processing_job = PROCESSING_JOB.load(Ordering::SeqCst);
             let mut job = job.clone();
-            if job.id >= processing_job {
-                job.queue_position = job.id - processing_job;
-            }
+            job.queue_position = queue_position(job.id, processing_job);
             Ok(Json(job))
         } else {
             Err(AuthError::Unauthorized.into())
@@ -310,6 +313,15 @@ mod tests {
     use tokio::{sync::Notify, time::timeout};
 
     use super::*;
+
+    #[test]
+    fn queue_position_handles_out_of_order_jobs() {
+        assert_eq!(queue_position(5, 2), 3);
+        assert_eq!(queue_position(2, 2), 0);
+        assert_eq!(queue_position(1, 2), 0);
+        assert_eq!(queue_position(0, u64::MAX), 0);
+        assert_eq!(queue_position(u64::MAX, 0), u64::MAX);
+    }
 
     struct PanickingJob;
 
