@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dependency-free semantic tests for deployment helpers. Fixtures are retained
+# Semantic tests use shell tools and Python's SQLite standard library. Fixtures are retained
 # under TMPDIR for inspection; this harness deliberately performs no cleanup.
 set -Eeuo pipefail
 IFS=$'\n\t'
@@ -106,7 +106,19 @@ bootstrap_tests() {
 
 db_tests() {
   local repo="$FIXTURE/db-repo" data="$FIXTURE/db-data" backups="$FIXTURE/backups" envfile="$FIXTURE/db.env" lock="$FIXTURE/db.lock" docker="$FIXTURE/docker-db" flockbin="$FIXTURE/flock" log="$FIXTURE/db.log" out backup quarantine fakebin
-  make_repo "$repo"; mkdir -p "$data" "$backups"; chmod 0750 "$data"; chmod 0700 "$backups"; write "$data/db.sqlite" database
+  make_repo "$repo"; mkdir -p "$data" "$backups"; chmod 0750 "$data"; chmod 0700 "$backups"
+  python3 - "$data/db.sqlite" <<'PY'
+import os, sqlite3, sys
+connection = sqlite3.connect(sys.argv[1])
+assert connection.execute('PRAGMA journal_mode=WAL').fetchone()[0] == 'wal'
+connection.execute('PRAGMA wal_autocheckpoint=0')
+connection.execute('CREATE TABLE recovery_probe (value TEXT NOT NULL)')
+connection.execute("INSERT INTO recovery_probe VALUES ('retained after recovery')")
+connection.commit()
+assert os.path.getsize(sys.argv[1] + '-wal') > 0
+# Leave committed data in WAL, as after an abrupt process exit. No writer remains.
+os._exit(0)
+PY
   make_docker "$docker" "$log"
   write "$flockbin" '#!/usr/bin/env bash\nexit 0\n'; chmod +x "$flockbin"
   out=$("$ROOT/deploy/acm-db.sh" --repository-dir "$FIXTURE/no-config" --help) || fail 'acm-db help required configuration'
@@ -135,6 +147,15 @@ db_tests() {
   out=$(env ACM_DB_TEST_MODE=1 ACM_ENV_FILE="$envfile" ACM_DOCKER_BIN="$docker" ACM_FLOCK_BIN="$flockbin" ACM_DB_LOCK_PATH="$lock" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" backup --backup-root "$backups")
   [[ "$out" =~ ^BACKUP_DIR=/ ]] || fail "backup stdout is not exact: $out"; backup=${out#BACKUP_DIR=}
   expect_ok 'acm-db emits valid backup metadata' env ACM_DB_TEST_MODE=1 ACM_ENV_FILE="$envfile" ACM_DOCKER_BIN="$docker" ACM_FLOCK_BIN="$flockbin" ACM_DB_LOCK_PATH="$lock" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" metadata --backup-dir "$backup"
+  python3 - "$backup/db.sqlite" <<'PY'
+import pathlib, sqlite3, sys
+path = pathlib.Path(sys.argv[1])
+assert pathlib.Path(str(path) + '-wal').is_file()
+with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True) as connection:
+    assert connection.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+    assert connection.execute('SELECT value FROM recovery_probe').fetchall() == [('retained after recovery',)]
+PY
+  pass 'acm-db backup preserves real committed SQLite WAL data'
   local default_quarantine="$FIXTURE/.acm-quarantine" data_filesystem parent_filesystem
   [ ! -e "$default_quarantine" ] || fail 'default dry-run quarantine fixture already exists'
   data_filesystem=$(stat -c '%d' "$data" 2>/dev/null || stat -f '%d' "$data")
@@ -151,6 +172,13 @@ db_tests() {
   [ ! -e "$data/db.sqlite-journal" ] || fail 'restore left stale journal at destination'
   compgen -G "$quarantine/acm-quarantine-*/db.sqlite-journal" >/dev/null || fail 'restore did not quarantine stale journal'
   pass 'acm-db restore leaves no stale journal at destination'
+  python3 - "$data/db.sqlite" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as connection:
+    assert connection.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+    assert connection.execute('SELECT value FROM recovery_probe').fetchall() == [('retained after recovery',)]
+PY
+  pass 'acm-db restores real SQLite rows after an abrupt writer exit'
   ln -s retained "$data/db.sqlite-journal"; : > "$log"
   expect_fail 'acm-db restore rejects symlink sidecar before mutation' 'symlink database sidecar rejected' env PATH="$fakebin:$PATH" ACM_DB_TEST_MODE=1 ACM_ENV_FILE="$envfile" ACM_DOCKER_BIN="$docker" ACM_FLOCK_BIN="$flockbin" ACM_DB_LOCK_PATH="$lock" "$ROOT/deploy/acm-db.sh" --repository-dir "$repo" restore --backup-dir "$backup" --quarantine-root "$quarantine" --yes-restore
   [ -f "$data/db.sqlite" ] || fail 'symlink sidecar failure mutated source database'

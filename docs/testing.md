@@ -101,10 +101,30 @@ For database retention, it compares migration records and table counts before an
 
 This is not an authenticated application submission test. A real Discord login and browser Run/Submit still require separate verification. CI uses placeholder credentials, not real accounts.
 
+### Isolated failure recovery
+
+After the local images are built, run:
+
+```sh
+python3 scripts/test-local-recovery.py
+```
+
+The script creates a separate Compose project with placeholder credentials and a new database volume. It does not download images or use an existing database. It checks runner outages, an in-flight request interrupted by `SIGKILL`, compilation after restart, and API restart with volume retention. It also reserves a temporary loopback port and confirms that a bind conflict prevents startup. The normal local stack's ports are not changed.
+
+Services are stopped at exit. Test containers, the volume, and configuration under `.local/acm-recovery-*` are retained for inspection. This is not an authenticated submission or durable queue-replay test. Interrupted requests are expected to fail.
+
+### SQLite backup and restore
+
+```sh
+env -u TMPDIR bash deploy/tests/semantic.sh
+```
+
+The deployment helper tests use a real synthetic SQLite database. The writer commits a row in WAL mode, then exits without closing its connection. The tests run the existing backup and restore helper and verify both database integrity and the restored row. Container lifecycle and ownership operations are mocked; this is not a live production restore. Fixtures are retained, and no existing database is read or changed.
+
 ## CI
 
-`.github/workflows/validate.yml` runs on pull requests and pushes to `main`. It checks Rust formatting, locked workspace check, Clippy with warnings denied, and locked workspace tests; uses Node 22 to install frontend dependencies with Yarn Classic, then lints and builds; runs Bash syntax and semantic deployment-script tests; and validates local and production Compose configuration with placeholder environment values. The semantic deployment tests exercise mocked backup and restore contracts, but not a live Docker-backed restore. Ubuntu CI exercises `flock` and `timeout` coverage that is skipped on macOS when those commands are unavailable.
+`.github/workflows/validate.yml` runs on pull requests and pushes to `main`. It checks Rust formatting, locked workspace check, Clippy with warnings denied, and locked workspace tests; uses Node 22 to install frontend dependencies with Yarn Classic, then lints and builds; runs Bash syntax and semantic deployment-script tests; and validates local and production Compose configuration with placeholder environment values. The semantic deployment tests exercise backup and restore contracts with real SQLite/WAL data and mocked container lifecycle operations, but not a live Docker-backed restore. Ubuntu CI exercises `flock` and `timeout` coverage that is skipped on macOS when those commands are unavailable.
 
-The `runner-isolation` CI matrix runs the real C++ and Rust compilers and Wasmtime in restricted native Linux amd64 and arm64 containers. It checks reference/peer-file access denial, recovery, execution limits, and missing-helper startup rejection. See [security verification](../specs/security/REVIEW.md).
+The `runner-isolation` CI matrix runs the real C++ and Rust compilers and Wasmtime in restricted native Linux amd64 and arm64 containers. It checks reference/peer-file access denial, recovery, execution limits, and missing-helper startup rejection. It also runs complete-stack and isolated failure-recovery checks. See [security verification](../specs/security/REVIEW.md).
 
-CI does not deploy, exercise live DNS/TLS/OAuth, run the production smoke check, perform a live Docker-backed restore, prove a host is correctly bootstrapped, or provide automated backup supervision. Backups remain manual-only; scheduled backups and a timeout supervisor are deferred. Run the operator checks for those conditions.
+CI does not deploy, exercise live DNS/TLS/OAuth, run the production smoke check, perform a live Docker-backed restore, prove a host is correctly bootstrapped, or provide automated backup supervision. CI does not enable scheduled backups or configure host supervision. Run the operator checks for those conditions.

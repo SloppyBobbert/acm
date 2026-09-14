@@ -63,8 +63,13 @@ mount, options = ramiel["tmpfs"][0].split(":", 1)
 assert mount == "/tmp"
 assert set(options.split(",")) == {"rw", "exec", "nosuid", "nodev", "size=512m", "mode=1777"}
 assert config["networks"]["runner"]["internal"] is True
-missing = dict(env)
-missing.pop("JWT_SECRET")
-result = subprocess.run(command + ["config", "--quiet"], env=missing, capture_output=True)
-assert result.returncode != 0, "Missing secrets must fail validation"
+for name in ("JWT_SECRET", "DISCORD_CLIENT_ID", "DISCORD_SECRET"):
+    for value in (None, ""):
+        invalid = dict(env)
+        if value is None:
+            invalid.pop(name)
+        else:
+            invalid[name] = value
+        result = subprocess.run(command + ["config", "--quiet"], env=invalid, capture_output=True)
+        assert result.returncode != 0, f"Missing or empty {name} must fail validation"
 print("PASS: local Compose configuration, isolation, and required secrets")

@@ -112,7 +112,7 @@ class DevLocalTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:8181 ws://127.0.0.1:8181/ws", (self.root / "frontend").read_text())
         self.assertEqual(database.read_bytes(), b"existing database sentinel")
 
-    def docker_case(self, fail=False):
+    def docker_case(self, fail=False, fail_build=False):
         # Mock the absolute compiler probe, so this test never starts a host runner.
         start = SCRIPT.split("start_ramiel() {", 1)[1].split("\n}\n\nif [[", 1)[0]
         self.assertIn("[[ -x /opt/wasi-sdk/bin/clang++ ]]", start)
@@ -129,6 +129,7 @@ RAMIEL_HOSTNAME=127.0.0.1
 RAMIEL_PORT=8082
 docker() {
     printf '%s\\n' "$*" >> "$HOME/docker-calls"
+    if [[ "$1" == build && "$FAIL_BUILD" == 1 ]]; then return 23; fi
     if [[ "$1" == run ]]; then
         if [[ "$FAIL_RUN" == 1 ]]; then return 1; fi
         printf '%s\\n' review-owned-container-id
@@ -137,7 +138,8 @@ docker() {
 '''
         code += "cleanup() {" + cleanup + "\n}\ntrap cleanup EXIT\n"
         code += "start_ramiel() {" + start + "\n}\nstart_ramiel\nwait\n"
-        result = self.shell(code, WASI_SDK=str(sdk), FAIL_RUN=str(int(fail)))
+        result = self.shell(code, WASI_SDK=str(sdk), FAIL_RUN=str(int(fail)),
+                            FAIL_BUILD=str(int(fail_build)))
         return result, calls.read_text().splitlines() if calls.exists() else []
 
     def test_docker_fallback_uses_absolute_path_and_owned_id(self):
@@ -153,6 +155,12 @@ docker() {
         result, calls = self.docker_case(fail=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(any(call.startswith(("rm ", "stop ")) for call in calls), calls)
+
+    def test_failed_image_build_does_not_start_or_stop_a_runner(self):
+        result, calls = self.docker_case(fail_build=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(any(call.startswith("build ") for call in calls), calls)
+        self.assertFalse(any(call.startswith(("run ", "rm ", "stop ")) for call in calls), calls)
 
     def test_frontend_origin_is_an_environment_value_not_a_flag(self):
         self.executable(
