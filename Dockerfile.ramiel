@@ -1,7 +1,9 @@
-ARG ACM_DOCKER_PLATFORM=linux/amd64
+ARG TARGETPLATFORM
+ARG ACM_DOCKER_PLATFORM=$TARGETPLATFORM
 
 FROM --platform=$ACM_DOCKER_PLATFORM rust:1.92-bookworm AS builder
 ARG TARGETARCH
+ARG CARGO_BUILD_JOBS=2
 WORKDIR /app
 
 COPY . .
@@ -16,10 +18,15 @@ RUN rustup target add wasm32-wasip1 && \
     cp -a "$(rustc --print sysroot)" /opt/submission-rust
 
 FROM submission-toolchain AS sandbox-builder
-RUN rustup target add x86_64-unknown-linux-musl
 COPY crates/ramiel/compiler-sandbox.rs /compiler-sandbox.rs
-RUN linker="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/^host:/{print $2}')/bin/rust-lld" && \
-    rustc --edition=2021 --target=x86_64-unknown-linux-musl \
+RUN case "$(uname -m)" in \
+        x86_64) target=x86_64-unknown-linux-musl ;; \
+        aarch64) target=aarch64-unknown-linux-musl ;; \
+        *) echo "Unsupported runner architecture" >&2; exit 1 ;; \
+    esac && \
+    rustup target add "$target" && \
+    linker="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | awk '/^host:/{print $2}')/bin/rust-lld" && \
+    rustc --edition=2021 --target="$target" \
         -C linker="$linker" -C linker-flavor=ld.lld -C opt-level=2 -C panic=abort \
         /compiler-sandbox.rs -o /compiler-sandbox
 
@@ -29,10 +36,16 @@ WORKDIR /
 RUN apt-get update && \
     apt-get install -y --no-install-recommends openssl libxml2 wget curl libxkbcommon-x11-0 libncurses5 ca-certificates
 
-RUN wget -O /tmp/wasi-sdk_19.0_amd64.deb https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-19/wasi-sdk_19.0_amd64.deb && \
-    echo "de05c74ae8ef17c9be3022df1cb014fca3f49648a763d5486dd233f5246517f6  /tmp/wasi-sdk_19.0_amd64.deb" | sha256sum -c - && \
-    dpkg -i /tmp/wasi-sdk_19.0_amd64.deb && \
-    rm -f /tmp/wasi-sdk_19.0_amd64.deb
+# Digests from the official wasi-sdk-27 GitHub release asset metadata.
+RUN case "$(dpkg --print-architecture)" in \
+        amd64) sdk_arch=x86_64; sha256=3ed68fc89e3299c0e2333360efac89ec60fbc01870732a486ab386267355cc80 ;; \
+        arm64) sdk_arch=arm64; sha256=8c4b2d61c586af1ed493e0c8bc05a3de28a089b85774fd2f0c2d2d9cf889c808 ;; \
+        *) echo "Unsupported WASI SDK architecture" >&2; exit 1 ;; \
+    esac && \
+    wget -O /tmp/wasi-sdk.deb "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-${sdk_arch}-linux.deb" && \
+    echo "$sha256  /tmp/wasi-sdk.deb" | sha256sum -c - && \
+    dpkg -i /tmp/wasi-sdk.deb && \
+    rm -f /tmp/wasi-sdk.deb
 
 RUN apt-get purge -y wget && \
     apt-get autoremove -y && \

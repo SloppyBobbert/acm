@@ -5,6 +5,7 @@ Or:  python3 scripts/test-rust-runner.py docker://container-name
 No API, database, browser, or authentication is mocked by this script.
 """
 import json
+from pathlib import Path
 import subprocess
 import sys
 import urllib.request
@@ -119,3 +120,22 @@ assert submit(rust, user_id=987655)["Ok"]["passed"]
 assert submit(cpp, "cpp", user_id=987655)["Ok"]["passed"]
 print("PASS: compiler reference/peer-file isolation and recovery after access denial")
 print("PASS: sample, i64, wrong output, diagnostics, stale output, fuel, memory, std, custom input, unsupported signatures, and external crate rejection")
+
+# Run the committed practice references, not a second copy of their algorithms.
+for problem_id, name in enumerate([
+    "digit-sum", "reverse-digits", "greatest-common-divisor", "fibonacci", "steps-to-zero",
+], start=100):
+    path = Path(__file__).resolve().parents[1] / "docs/examples/local-demo" / f"{name}.json"
+    try:
+        problem = json.loads(path.read_text())
+    except (OSError, ValueError) as error:
+        raise AssertionError(f"Cannot load practice fixture {name}") from error
+    result = post("/run/c++", {
+        "problem_id": problem_id,
+        "user_id": 987654,
+        "implementation": 'extern "C" {\n' + problem["reference"] + '\n}',
+        "tests": [{**test, "id": test["index"]} for test in problem["tests"]],
+        "runtime_multiplier": None,
+    })
+    assert result.get("Ok", {}).get("passed"), f"{name}: {result}"
+    print("PASS: practice fixture", name)

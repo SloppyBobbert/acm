@@ -38,7 +38,8 @@ The queue, job status map, counters, and broadcast channel are process-local. Re
 ## Current constraints
 
 - Ramiel's host-native compiler path is fixed at `/opt/wasi-sdk/bin/clang++`.
-- Production Ramiel is amd64 because the image installs the amd64 WASI SDK package.
+- Ramiel images use WASI SDK 27 on native Linux amd64 and arm64. The shared Dockerfile upgrades both local and production C++ compilation from SDK 19 to SDK 27.
+- Production Ramiel remains amd64 because `compose.production.yml` pins `platform: linux/amd64`. Local `compose.yml` uses the native Docker architecture; CPU emulation is not supported.
 - The API health endpoint checks that the process responds; it does not prove a job can compile or execute.
 - Caddy proxies the API domain only. The frontend remains a separate Vercel deployment.
 - Adding a CDN or load balancer requires a redesigned, explicitly configured trusted-proxy setup. Do not accept arbitrary forwarded-address chains.

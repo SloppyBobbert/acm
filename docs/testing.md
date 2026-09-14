@@ -51,13 +51,14 @@ agent-browser --session diagnostics-check close
 
 The script attaches CDP to that browser, opens its own page, and runs the production editor with real local syntax workers/grammars. It checks default-off/no parser requests, keyboard toggling, persistence, both languages, Unicode, compiler-marker wiring through Run/Submit, identical-source history restoration, off/on and concurrent-request rejection, missing-worker failure, the 200 KiB limit, navigation, and worker teardown. Screenshots, UI evidence and cold/warm/50 KiB parse timings go under ignored `.local/acceptance/editor-diagnostics/browser/`. Override `DIAGNOSTICS_ORIGIN` and `DIAGNOSTICS_EVIDENCE` if necessary. The browser harness uses React's internal fiber only to locate the actual Monaco model; no test hooks are shipped in production. If React changes, update that harness lookup rather than adding an application backdoor.
 
-This is **not native compiler/browser acceptance**. On a supported native Linux amd64 runner with a test login, separately exercise real Rust/C++ errors and successful compilation through both Run and Submit. Keep that acceptance blocked when the supported host/login is unavailable; never bypass compiler isolation. Asset provenance, versions, licenses and raw sizes are recorded in [the asset manifest](../lilith/public/editor-diagnostics/README.md).
+This is **not native compiler/browser acceptance**. On a supported native Linux amd64 or arm64 runner with a test login, separately exercise real Rust/C++ errors and successful compilation through both Run and Submit. Keep that acceptance blocked when the supported host/login is unavailable; never bypass compiler isolation. Asset provenance, versions, licenses and raw sizes are recorded in [the asset manifest](../lilith/public/editor-diagnostics/README.md).
 
 ## Local launcher and sample data
 
 ```sh
 bash -n scripts/dev-local.sh
 python3 scripts/tests/test_dev_local.py
+python3 scripts/tests/test_local_compose.py
 SQLX_OFFLINE=true cargo test --locked -p server local_samples_use_existing_creation_and_test_paths
 ```
 
@@ -74,10 +75,10 @@ sudo docker compose --env-file deploy/.env.production -f compose.production.yml 
 
 `config --quiet` validates the resolved Compose configuration without printing interpolated values, including secrets.
 
-Apple Silicon can cross-build an amd64 image, but cannot run the isolated runner under Rosetta. Execution requires native Linux amd64 with Landlock ABI 3 or later. For an image build only, use the matching Dockerfile and platform:
+Local execution requires native Linux amd64 or arm64 with Landlock ABI 3 or later. Apple Silicon must use native arm64 containers, not Rosetta. Production Compose remains amd64. To build for the Docker engine's native architecture:
 
 ```sh
-docker build --platform linux/amd64 --provenance=false -f Dockerfile.ramiel -t acm-ramiel:local .
+docker build --provenance=false -f Dockerfile.ramiel -t acm-ramiel:local .
 ```
 
 After starting the stack, use the bounded production smoke check (use `--resolve` only on the host when testing its local listener):
@@ -86,10 +87,24 @@ After starting the stack, use the bounded production smoke check (use `--resolve
 sudo /usr/local/libexec/acm/smoke.sh --repository-dir "$(pwd -P)" --resolve
 ```
 
+### Complete local stack
+
+On an idle local/test stack, run:
+
+```sh
+python3 scripts/test-local-compose.py --env-file /absolute/path/to/your.env
+```
+
+This command builds and recreates services. It leaves a small marker in the database volume. It checks non-root service users, all service health checks, the published frontend/API ports from the host, and a real request to the configured runner from the API container.
+
+For database retention, it compares migration records and table counts before and after API recreation, and checks the volume marker. A network-disabled helper reuses the frontend image's built-in SQLite support and mounts the stopped API's volume read-only, including any WAL files. It does not compare raw database-file hashes or test crash recovery. The script restores the API after this check, including failures. Concurrent user writes can fail the comparison. Use a separate idle test stack when users are active.
+
+This is not an authenticated application submission test. A real Discord login and browser Run/Submit still require separate verification. CI uses placeholder credentials, not real accounts.
+
 ## CI
 
-`.github/workflows/validate.yml` runs on pull requests and pushes to `main`. It checks Rust formatting, locked workspace check, Clippy with warnings denied, and locked workspace tests; uses Node 22 to install frontend dependencies with Yarn Classic, then lints and builds; runs Bash syntax and semantic deployment-script tests; and validates resolved production Compose configuration with placeholder environment values. The semantic deployment tests exercise mocked backup and restore contracts, but not a live Docker-backed restore. Ubuntu CI exercises `flock` and `timeout` coverage that is skipped on macOS when those commands are unavailable.
+`.github/workflows/validate.yml` runs on pull requests and pushes to `main`. It checks Rust formatting, locked workspace check, Clippy with warnings denied, and locked workspace tests; uses Node 22 to install frontend dependencies with Yarn Classic, then lints and builds; runs Bash syntax and semantic deployment-script tests; and validates local and production Compose configuration with placeholder environment values. The semantic deployment tests exercise mocked backup and restore contracts, but not a live Docker-backed restore. Ubuntu CI exercises `flock` and `timeout` coverage that is skipped on macOS when those commands are unavailable.
 
-The `runner-isolation` CI job runs the real C++ and Rust compilers and Wasmtime in a restricted native Linux amd64 container. It checks reference/peer-file access denial, recovery, execution limits, and missing-helper startup rejection. See [security verification](../specs/security/REVIEW.md).
+The `runner-isolation` CI matrix runs the real C++ and Rust compilers and Wasmtime in restricted native Linux amd64 and arm64 containers. It checks reference/peer-file access denial, recovery, execution limits, and missing-helper startup rejection. See [security verification](../specs/security/REVIEW.md).
 
 CI does not deploy, exercise live DNS/TLS/OAuth, run the production smoke check, perform a live Docker-backed restore, prove a host is correctly bootstrapped, or provide automated backup supervision. Backups remain manual-only; scheduled backups and a timeout supervisor are deferred. Run the operator checks for those conditions.

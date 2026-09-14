@@ -6,7 +6,7 @@ The API uses Ramiel for submissions, custom input, and generated tests. Ramiel's
 
 ## Running
 
-Use the container for local and production runs. A host-native process requires Linux amd64 with Landlock ABI 3 or later, the image's compiler helper at `/usr/local/libexec/acm-compiler-sandbox`, the WASI SDK at `/opt/wasi-sdk/bin/clang++`, and Rust at `/opt/submission-rust`. It also needs a Wasmtime cache configuration (default `./wasmtime-cache.toml`):
+Use the container for local and production runs. A host-native process requires Linux amd64 or arm64 with Landlock ABI 3 or later, the image's compiler helper at `/usr/local/libexec/acm-compiler-sandbox`, the WASI SDK at `/opt/wasi-sdk/bin/clang++`, and Rust at `/opt/submission-rust`. It also needs a Wasmtime cache configuration (default `./wasmtime-cache.toml`):
 
 ```sh
 SQLX_OFFLINE=true cargo run -p ramiel -- --hostname 127.0.0.1 --port 8082
@@ -15,7 +15,22 @@ curl --fail http://127.0.0.1:8082/healthz
 
 Use `--hostname`, `--port`, and `--wasmtime-cache-config` to override the bind address, port, and cache configuration. Their environment-variable forms are `HOSTNAME`, `PORT`, and `WASMTIME_CACHE_CONFIG`.
 
-The supported production path is the Ramiel container built by `compose.production.yml`. Before using production Compose commands, create `deploy/.env.production` as `root:root` mode `0600` with `sudoedit`. Use the example as a field reference and follow [deployment](../../deploy/README.md). The container supplies the WASI SDK, runs as a non-root user, and keeps Ramiel on the internal runner network. The image and Compose service require native Linux amd64 with Landlock ABI 3 or later. Docker emulation on Apple Silicon is not supported.
+The supported production path is the Ramiel container built by `compose.production.yml`. Before using production Compose commands, create `deploy/.env.production` as `root:root` mode `0600` with `sudoedit`. Use the example as a field reference and follow [deployment](../../deploy/README.md). The container supplies the WASI SDK, runs as a non-root user, and keeps Ramiel on the internal runner network. Production Compose remains explicitly amd64. Local `compose.yml` selects the native Docker architecture and starts Ramiel by default. CPU emulation is not supported.
+
+## Docker platform support
+
+Use `docker compose up --build` from the repository root with the required private `.env` values. See [local setup](../../docs/local-demo.md). The image includes checksum-verified WASI SDK 27 and Rust 1.92.0 submission tools for amd64 and arm64. No host compiler installation is required.
+
+| Platform | Verification |
+| --- | --- |
+| Apple Silicon, Docker Engine 29.4.1, LinuxKit 6.12.76 | Native ARM64 C++/Rust execution, resource limits, file isolation, recovery, and five practice fixtures passed. |
+| Native Linux amd64 | Real compiler/isolation tests run in the `runner-isolation` CI matrix. |
+| Native Linux arm64 | Real compiler/isolation tests run in the `runner-isolation` CI matrix. |
+| Docker Desktop on Windows or Intel Mac | Not yet tested directly. Use Linux containers on a matching CPU architecture. |
+
+All platforms require Landlock ABI 3 or later under Docker's security policy. A kernel version alone does not prove support. The helper must deny access to an existing file before Ramiel can start. An unsupported kernel produces an error, not unrestricted compilation.
+
+Images build locally. No prebuilt registry release is provided by this change.
 
 ## Rust submissions
 
@@ -64,9 +79,9 @@ A compiler can read its own job directory, toolchain files, and required system 
 
 Startup requires the native helper to pass a filesystem-denial self-check. Ramiel refuses to start if the helper is missing or cannot enforce Landlock ABI 3 or later. There is no unrestricted fallback. Do not disable seccomp or add container privileges to bypass a failed check.
 
-The build uses the Rust `x86_64-unknown-linux-musl` target for the helper. That build target is not copied into the final image.
+The build selects `x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl` for the native helper. That build target is not copied into the final image.
 
-Rosetta emulation requires access to per-process files in `/proc`. This policy does not grant that access. The `runner-isolation` CI job runs the real compiler checks on native Ubuntu amd64 instead.
+Rosetta emulation requires access to per-process files in `/proc`. This policy does not grant that access. The `runner-isolation` CI matrix runs the real compiler checks on native Ubuntu amd64 and arm64 instead.
 
 The real runner test script also checks reference-source access, peer-source access, and recovery after denied access. A denied access must report a permission error, not a missing file.
 

@@ -154,4 +154,4 @@ Both workers also parsed valid templates with Unicode/CRLF, C++ preprocessor inp
 
 ### Remaining acceptance
 
-Real authenticated Rust/C++ compilation through Run/Submit requires a supported native Linux amd64 runner and test login. Neither is available in this local Apple Silicon environment. That external check is **blocked**, not waived or simulated as complete. No database or real credential was touched, no deployment or merge occurred, and no compiler isolation was relaxed. Advisory parsing cannot check types, borrow rules, linker errors or macro expansion semantics.
+Real authenticated Rust/C++ compilation through Run/Submit requires a supported native Linux amd64 or arm64 runner and test login. Native ARM64 compiler checks now pass on Apple Silicon with Docker Compose, but the authenticated browser check still requires a real test login. That external check is **blocked**, not waived or simulated as complete. No database or real credential was touched, no deployment or merge occurred, and no compiler isolation was relaxed. Advisory parsing cannot check types, borrow rules, linker errors or macro expansion semantics.

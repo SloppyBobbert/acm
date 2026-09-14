@@ -18,10 +18,10 @@ jobs:
     env:
       SQLX_OFFLINE: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
@@ -31,14 +31,32 @@ jobs:
       - run: cargo test --workspace --locked
 
   runner-isolation:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            machine: x86_64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            machine: aarch64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - uses: docker/setup-compose-action@2fe291b7677a45ee1269ec56a42604c143505e7e # v1
+        with:
+          version: v2.39.4
       - name: Build native runner
-        run: docker build --platform linux/amd64 -f Dockerfile.ramiel -t acm-runner:test .
+        env:
+          EXPECTED_MACHINE: ${{ matrix.machine }}
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: |
+          test "$(uname -m)" = "$EXPECTED_MACHINE"
+          docker build --platform "$TARGET_PLATFORM" --provenance=false -f Dockerfile.ramiel -t acm-runner:test .
       - name: Start restricted runner
         run: |
           docker run --detach --init --name acm-runner-test \
@@ -63,9 +81,23 @@ jobs:
           printf '%s\n' "$output"
           test "$status" -eq 1
           printf '%s\n' "$output" | grep -F 'Cannot start compiler filesystem isolation'
+      - name: Test complete local stack and persistence
+        env:
+          JWT_SECRET: ci-only-not-a-real-secret
+          DISCORD_CLIENT_ID: ci-only-client
+          DISCORD_SECRET: ci-only-not-a-real-secret
+        run: |
+          docker stop acm-runner-test
+          python3 scripts/test-local-compose.py --env-file /dev/null
       - name: Show runner diagnostics on failure
         if: failure()
-        run: docker logs acm-runner-test
+        env:
+          JWT_SECRET: ci-only-not-a-real-secret
+          DISCORD_CLIENT_ID: ci-only-client
+          DISCORD_SECRET: ci-only-not-a-real-secret
+        run: |
+          docker logs acm-runner-test
+          docker compose --env-file /dev/null logs --tail=100 server frontend ramiel
 
   frontend:
     runs-on: ubuntu-latest
@@ -76,10 +108,10 @@ jobs:
       NEXT_PUBLIC_API_URL: https://api.example.test
       NEXT_PUBLIC_WS_URL: wss://api.example.test/ws
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: yarn
@@ -93,7 +125,7 @@ jobs:
   shell:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Check Bash syntax
@@ -128,9 +160,14 @@ jobs:
   compose:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - uses: docker/setup-compose-action@2fe291b7677a45ee1269ec56a42604c143505e7e # v1
+        with:
+          version: v2.39.4
+      - name: Validate local Compose configuration
+        run: python3 scripts/tests/test_local_compose.py
       - name: Validate production Compose configuration
         shell: bash
         run: |

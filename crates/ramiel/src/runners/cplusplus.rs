@@ -24,7 +24,7 @@ use tokio::{
 
 use super::{run_command, run_test_timed, timeout_error, Runner, TestResults, WasmRuntime};
 
-const CACHE_VERSION: &str = "clang++-wasi-v2-landlock";
+const CACHE_VERSION: &str = "clang++-wasi-sdk27-landlock";
 const CHILD_CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(Clone)]
