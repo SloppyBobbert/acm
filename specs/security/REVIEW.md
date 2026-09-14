@@ -28,13 +28,28 @@ The reported access defect is closed for the tested cases; this does not prove a
 
 ## Isolation feasibility probe
 
-The current container runs on `6.12.76-linuxkit` as UID 10001, with no effective capabilities, `NoNewPrivs=1`, and seccomp enabled.
+The original probe used `6.12.76-linuxkit` as UID 10001, with no effective capabilities, `NoNewPrivs=1`, and seccomp enabled.
 The x86-64 Landlock query returned `ENOSYS` (38) under emulation.
 A native ARM64 probe returned ABI 6. A native helper also passed a filesystem-denial self-check.
 However, Rosetta then required access to `/proc/self/exe`, a public VM setting, and per-process memory maps.
-The ARM helper experiment was not sufficient for safe compiler execution. Its extra permissions were removed.
-The supported runner now requires native Linux amd64 with Landlock ABI 3 or later.
+That mixed native-helper/emulated-compiler experiment was not sufficient for safe compiler execution. Its extra permissions were removed.
+
+The complete native toolchain is now supported on Linux amd64 and arm64 with Landlock ABI 3 or later. CPU emulation remains unsupported.
+The helper remains a static musl binary and grants no `/proc` access. Startup remains fail-closed.
 No seccomp controls were disabled and no container capabilities were added.
+
+## Native toolchain and production scope
+
+Both architectures use WASI SDK 27 and the architecture-specific static helper.
+This changes the shared production image from SDK 19 to SDK 27, not only the local Compose image.
+The owner approved SDK 27 for the next production build during PR #23 review. This approval is not permission to merge or deploy.
+The C++ cache version changed to prevent reuse of results from the earlier toolchain.
+Production Compose still pins Ramiel to amd64; local Compose selects the native architecture.
+
+[Native CI run 34788873816](https://github.com/SloppyBobbert/acm/actions/runs/34788873816), at `af3374b`,
+passed real C++/Rust compilation, reference/peer-file denial and recovery, resource limits, and complete stack startup on both architectures.
+The native ARM64 Docker Desktop stack also passed these runner checks on Apple Silicon.
+These results replace the earlier amd64-only support restriction; they do not establish safety under CPU emulation.
 
 ## Completed fixes
 
@@ -54,4 +69,5 @@ Local verification passed: 81 Rust tests, Clippy, formatting, frontend tests, fr
 verified real C++/Rust execution, reference/peer-file denial and recovery, and fuel exhaustion.
 Memory growth of 256 MiB was allowed; growth of 600 MiB was denied without a guest trap.
 Startup without the helper failed with exit code 1. Rust, frontend, shell, and Compose checks also passed.
-The logged-in Rust happy path passed before isolation. Final browser checks remain pending until a supported test host is available.
+The logged-in Rust happy path passed before isolation. Final Discord login and browser Run/Submit checks still require an authorized test session.
+Windows Docker Desktop and Intel Mac have not been directly tested.

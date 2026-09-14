@@ -64,7 +64,7 @@ ACM_DATA_DIR=/var/lib/acm
 | `DISCORD_SECRET` | **Supply** | none | Discord OAuth client secret. |
 | `ACM_DATA_DIR` | **Supply** | none | Required production host directory mounted at `/var/lib/acm` for SQLite. Use a normalized absolute literal path, for example `/var/lib/acm`; its final directory is `10001:10001` mode `0750`, with root-owned non-writable ancestors. |
 | `PARALLEL_JOB_COUNT` | No | `1` | Passed to the server. |
-| `ACM_DOCKER_PLATFORM` | No | `linux/amd64` | Server image build/run platform. Ramiel is fixed to `linux/amd64`. |
+| `ACM_DOCKER_PLATFORM` | No | `linux/amd64` | Production server image build/run platform. Production Compose pins Ramiel to `linux/amd64`; the image itself supports native amd64 and arm64. Local `compose.yml` uses the native Docker architecture. |
 
 Production Compose forwards `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET`. It fixes only `PORT`, `DATABASE_URL`, `RAMIEL_URL`, `COOKIE_SECURE`, and `TRUSTED_PROXY_IP` internally; it also sets Ramiel's cache configuration. Do not add those fixed values to the production env file unless the image or Compose file is changed.
 

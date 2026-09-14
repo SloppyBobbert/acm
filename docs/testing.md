@@ -95,7 +95,9 @@ On an idle local/test stack, run:
 python3 scripts/test-local-compose.py --env-file /absolute/path/to/your.env
 ```
 
-This command builds and recreates services. It leaves a small marker in the database volume. It checks all service health checks, a real request to the configured runner from the API container, and database retention after API recreation. The script restores the API after the persistence check, including failures. Concurrent user writes can fail its checksum comparison. Use a separate idle test stack when users are active.
+This command builds and recreates services. It leaves a small marker in the database volume. It checks non-root service users, all service health checks, the published frontend/API ports from the host, and a real request to the configured runner from the API container.
+
+For database retention, it compares migration records and table counts before and after API recreation, and checks the volume marker. A network-disabled helper reuses the frontend image's built-in SQLite support and mounts the stopped API's volume read-only, including any WAL files. It does not compare raw database-file hashes or test crash recovery. The script restores the API after this check, including failures. Concurrent user writes can fail the comparison. Use a separate idle test stack when users are active.
 
 This is not an authenticated application submission test. A real Discord login and browser Run/Submit still require separate verification. CI uses placeholder credentials, not real accounts.
 
