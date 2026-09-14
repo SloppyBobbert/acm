@@ -6,16 +6,43 @@ The API uses Ramiel for submissions, custom input, and generated tests. Ramiel's
 
 ## Running
 
-Use the container for local and production runs. A host-native process requires Linux amd64 or arm64 with Landlock ABI 3 or later, the image's compiler helper at `/usr/local/libexec/acm-compiler-sandbox`, the WASI SDK at `/opt/wasi-sdk/bin/clang++`, and Rust at `/opt/submission-rust`. It also needs a Wasmtime cache configuration (default `./wasmtime-cache.toml`):
+### Local Compose
+
+Use the [complete local stack](../../README.md#docker-compose) for normal development. Run Compose commands from the repository root after you supply the required private environment values:
 
 ```sh
-SQLX_OFFLINE=true cargo run -p ramiel -- --hostname 127.0.0.1 --port 8082
-curl --fail http://127.0.0.1:8082/healthz
+docker compose up --build
 ```
 
-Use `--hostname`, `--port`, and `--wasmtime-cache-config` to override the bind address, port, and cache configuration. Their environment-variable forms are `HOSTNAME`, `PORT`, and `WASMTIME_CACHE_CONFIG`.
+Ramiel has no published host port in this stack. In another terminal, check its health inside the container:
 
-The supported production path is the Ramiel container built by `compose.production.yml`. Before using production Compose commands, create `deploy/.env.production` as `root:root` mode `0600` with `sudoedit`. Use the example as a field reference and follow [deployment](../../deploy/README.md). The container supplies the WASI SDK, runs as a non-root user, and keeps Ramiel on the internal runner network. Production Compose remains explicitly amd64. Local `compose.yml` selects the native Docker architecture and starts Ramiel by default. CPU emulation is not supported.
+```sh
+docker compose exec -T ramiel curl --fail http://127.0.0.1:8082/healthz
+```
+
+A successful health check proves that the process responds. Use the [compiler tests](#rust-submissions) to check compilation and execution.
+
+### Host-native development
+
+A host-native process requires all of these components:
+
+- Native Linux amd64 or arm64 with Landlock ABI 3 or later.
+- The static compiler helper at `/usr/local/libexec/acm-compiler-sandbox`.
+- WASI SDK 27 at `/opt/wasi-sdk/bin/clang++`.
+- Rust 1.92.0 with the `wasm32-wasip1` target at `/opt/submission-rust`.
+- A Wasmtime cache configuration. The default path is `./wasmtime-cache.toml`.
+
+Do not export the API's private environment into this process. From the repository root, run:
+
+```sh
+SQLX_OFFLINE=true cargo run --locked -p ramiel -- --hostname 127.0.0.1 --port 8082
+```
+
+Use `--hostname`, `--port`, and `--wasmtime-cache-config` for the bind address, port, and cache configuration. Their environment forms are `HOSTNAME`, `PORT`, and `WASMTIME_CACHE_CONFIG`. Set the bind address explicitly rather than depend on the shell's `HOSTNAME` value.
+
+### Production
+
+Use the [production operator guide](../../deploy/README.md), not the local Compose configuration. Production Compose keeps Ramiel on a private network and pins its platform to native amd64. The same Dockerfile supplies WASI SDK 27 for local and production builds. CPU emulation is unsupported.
 
 ## Docker platform support
 
@@ -30,7 +57,7 @@ Use `docker compose up --build` from the repository root with the required priva
 
 All platforms require Landlock ABI 3 or later under Docker's security policy. A kernel version alone does not prove support. The helper must deny access to an existing file before Ramiel can start. An unsupported kernel produces an error, not unrestricted compilation.
 
-Images build locally. No prebuilt registry release is provided by this change.
+These instructions use source builds, not a prebuilt registry release.
 
 ## Rust submissions
 
@@ -61,15 +88,15 @@ Rust uses the existing deadlines and memory limits. Its fuel budget is four time
 The existing global fuel cap still applies. This initial allowance is for integer signatures, not a cross-language performance comparison.
 C++ fuel budgets remain unchanged.
 
-For real compiler checks, start a restricted local runner container, then run:
+After the default local Compose runner is healthy, run from the repository root:
 
 ```sh
-python3 scripts/test-rust-runner.py http://127.0.0.1:8082
-# For a container with no published ports:
-python3 scripts/test-rust-runner.py docker://container-name
+python3 scripts/test-rust-runner.py docker://acm-local-ramiel-1
 ```
 
-This checks the compiler and Wasmtime. It does not replace a logged-in browser test.
+For a custom project name, use the container name from `docker compose ps`. For a supported host-native process, use `http://127.0.0.1:8082` instead of the `docker://` address.
+
+The script checks real C++ and Rust compilation, Wasmtime execution, resource limits, file-access denial, and recovery. It does not replace a logged-in browser test. See [recovery and backup tests](../../docs/testing.md#isolated-failure-recovery) for the separate operational checks.
 
 ## Compiler filesystem isolation
 
@@ -77,7 +104,7 @@ Both compilers run through a small, statically linked helper. The helper applies
 
 A compiler can read its own job directory, toolchain files, and required system libraries. It cannot read reference or peer submission directories. Temporary files stay in the job directory. Compiler environments are cleared. Existing process-group cleanup and deadlines remain active.
 
-Startup requires the native helper to pass a filesystem-denial self-check. Ramiel refuses to start if the helper is missing or cannot enforce Landlock ABI 3 or later. There is no unrestricted fallback. Do not disable seccomp or add container privileges to bypass a failed check.
+Startup requires the native helper to pass a filesystem-denial self-check. If the helper is missing or cannot enforce Landlock ABI 3 or later, Ramiel refuses to start. There is no unrestricted fallback. Do not disable seccomp or add container privileges to bypass a failed check.
 
 The build selects `x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl` for the native helper. That build target is not copied into the final image.
 
@@ -87,12 +114,19 @@ The real runner test script also checks reference-source access, peer-source acc
 
 ## Limits
 
-Ramiel applies request deadlines: 360 seconds for submissions, 120 seconds for test generation, and 60 seconds for custom input. The production container has a read-only root filesystem, a 512 MiB executable `/tmp` tmpfs, 2 CPUs, 2 GiB memory, and a 256-process limit. These limits are operational controls, not a guarantee that untrusted code is safe.
+Ramiel applies these request deadlines:
+
+| Request | Deadline |
+| --- | ---: |
+| Submission | 360 seconds |
+| Test generation | 120 seconds |
+| Custom input | 60 seconds |
+
+Compose runs the container with a read-only root filesystem and an executable 512 MiB `/tmp` tmpfs. It limits the container to 2 CPUs, 2 GiB memory, and 256 processes. These controls do not guarantee that untrusted code is safe.
 
 ## Focused commands
 
 ```sh
-SQLX_OFFLINE=true cargo check -p ramiel
-SQLX_OFFLINE=true cargo test -p ramiel
-docker compose --env-file deploy/.env.production -f compose.production.yml build ramiel
+SQLX_OFFLINE=true cargo check -p ramiel --locked
+SQLX_OFFLINE=true cargo test -p ramiel --locked
 ```
