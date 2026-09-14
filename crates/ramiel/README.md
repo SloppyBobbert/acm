@@ -1,8 +1,15 @@
 # Ramiel
 
+[Chico ACM](../../README.md) / **Runner**
+
+[Setup](#running) · [Platforms](#docker-platform-support) · [Rust submissions](#rust-submissions) · [Isolation](#compiler-filesystem-isolation) · [Limits](#limits)
+
 Ramiel is the runner service for Chico ACM. It compiles C++ and Rust submissions to WebAssembly and executes them with Wasmtime. It also exposes `GET /healthz` for process health checks.
 
-The API uses Ramiel for submissions, custom input, and generated tests. Ramiel's HTTP endpoints are intended for the API, not for public exposure.
+> [!IMPORTANT]
+> The API uses Ramiel for submissions, custom input, and generated tests. Ramiel's HTTP endpoints are intended for the API, not for public exposure.
+
+---
 
 ## Running
 
@@ -20,7 +27,8 @@ Ramiel has no published host port in this stack. In another terminal, check its 
 docker compose exec -T ramiel curl --fail http://127.0.0.1:8082/healthz
 ```
 
-A successful health check proves that the process responds. Use the [compiler tests](#rust-submissions) to check compilation and execution.
+> [!NOTE]
+> A successful health check proves that the process responds. Use the [compiler tests](#rust-submissions) to check compilation and execution.
 
 ### Host-native development
 
@@ -104,7 +112,8 @@ Both compilers run through a small, statically linked helper. The helper applies
 
 A compiler can read its own job directory, toolchain files, and required system libraries. It cannot read reference or peer submission directories. Temporary files stay in the job directory. Compiler environments are cleared. Existing process-group cleanup and deadlines remain active.
 
-Startup requires the native helper to pass a filesystem-denial self-check. If the helper is missing or cannot enforce Landlock ABI 3 or later, Ramiel refuses to start. There is no unrestricted fallback. Do not disable seccomp or add container privileges to bypass a failed check.
+> [!CAUTION]
+> Startup requires the native helper to pass a filesystem-denial self-check. If the helper is missing or cannot enforce Landlock ABI 3 or later, Ramiel refuses to start. There is no unrestricted fallback. Do not disable seccomp or add container privileges to bypass a failed check.
 
 The build selects `x86_64-unknown-linux-musl` or `aarch64-unknown-linux-musl` for the native helper. That build target is not copied into the final image.
 

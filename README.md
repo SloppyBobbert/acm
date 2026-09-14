@@ -1,6 +1,16 @@
 # Chico ACM
 
-Chico ACM is a programming-competition site for C++ and Rust practice. It includes a Next.js frontend, a Rust API, and the isolated Ramiel runner. The API stores application data in SQLite. Ramiel compiles submissions to WebAssembly and executes them with Wasmtime.
+**A programming-competition site for C++ and Rust practice.**
+
+[![Validation](https://github.com/SloppyBobbert/acm/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/SloppyBobbert/acm/actions/workflows/validate.yml)
+
+[Quick start](#docker-compose) · [Practice problems](docs/local-demo.md) · [Testing](#checks) · [Deployment](deploy/README.md) · [Documentation](#further-documentation)
+
+| Frontend | API | Runner |
+| --- | --- | --- |
+| Next.js | Rust with SQLite storage | Ramiel compiles C++ and Rust to WebAssembly and executes them with Wasmtime. |
+
+---
 
 ## Prerequisites
 
@@ -44,7 +54,10 @@ Run these commands from the repository root.
 
 4. Open **<http://127.0.0.1:3000>**.
 
-The first build downloads large toolchains and dependencies. When the code is unchanged, use `docker compose up` for later starts. After a code change, rebuild the affected image. The frontend runs `next dev` inside its image, without a source bind mount. This is a local development setup, not the production deployment path.
+> [!NOTE]
+> The first build downloads large toolchains and dependencies. When the code is unchanged, use `docker compose up` for later starts.
+
+After a code change, rebuild the affected image. The frontend runs `next dev` inside its image, without a source bind mount. This is a local development setup, not the production deployment path.
 
 | Service | Local access |
 | --- | --- |
@@ -52,7 +65,8 @@ The first build downloads large toolchains and dependencies. When the code is un
 | API health | `http://127.0.0.1:8081/healthz` |
 | Ramiel | Private Docker network only. No published host port. |
 
-A new database starts without practice problems. The five [practice fixtures](docs/examples/local-demo/) are not imported automatically. See the [first-run guide](docs/local-demo.md) for administrator setup, sample import, and alternate environment files.
+> [!TIP]
+> A new database starts without practice problems. The five [practice fixtures](docs/examples/local-demo/) are not imported automatically. See the [first-run guide](docs/local-demo.md) for administrator setup, sample import, and alternate environment files.
 
 ### Check and stop the stack
 
@@ -72,7 +86,8 @@ docker compose stop
 
 By default, the database uses the named volume `acm-local_local_data`. It is separate from the host's `db.sqlite` file.
 
-**CAUTION:** `docker compose down --volumes` deletes the local Docker database. Do not use it to resolve an ordinary startup failure.
+> [!CAUTION]
+> `docker compose down --volumes` deletes the local Docker database. Do not use it to resolve an ordinary startup failure.
 
 ### Host development
 
@@ -87,6 +102,8 @@ The launcher reads the root `.env` by default. `DEV_ENV_FILE` selects a differen
 The launcher's Docker fallback for Ramiel is amd64-only. On Apple Silicon, use the native Compose setup instead. `DEV_START_RAMIEL=false` starts only the host frontend and API. Compilation then requires a separately configured supported runner.
 
 Do not export API secrets into a host-native Ramiel process. See [Ramiel setup](crates/ramiel/README.md#running) for its toolchain and isolation requirements.
+
+---
 
 ## Checks
 
@@ -131,6 +148,8 @@ Use the [production operator guide](deploy/README.md). Production requires a tru
 In the submission editor, open **Settings** and enable **Inline code checks** for optional C++/Rust syntax markers. The setting is off by default and stays in local browser storage. Syntax checks do not send source to the API or replace isolated compilation.
 
 Rust submissions currently support scalar `i32` and `i64` arguments and results. See [Rust submission limits](crates/ramiel/README.md#rust-submissions) and [editor diagnostics](docs/editor-diagnostics.md).
+
+---
 
 ## Repository map
 

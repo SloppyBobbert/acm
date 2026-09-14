@@ -1,6 +1,11 @@
 # Production deployment
 
-For local development, use the [local Compose guide](../README.md#docker-compose). This guide is for production operators and includes commands that change the host and database.
+[Chico ACM](../README.md) / **Operations**
+
+[First launch](#bootstrap-and-first-launch) · [Updates](#updates) · [Backups and rollback](#backup-restore-and-rollback) · [Smoke checks](#smoke-and-routine-operations) · [Security](#security-checklist)
+
+> [!IMPORTANT]
+> For local development, use the [local Compose guide](../README.md#docker-compose). This guide is for production operators and includes commands that change the host and database.
 
 `compose.production.yml` builds Caddy, the API, and Ramiel from the source checkout. Only Caddy exposes application ports 80 and 443. The frontend is deployed separately. Do not substitute GHCR images for this workflow.
 
@@ -10,6 +15,8 @@ Run every production command with `sudo`. Use `/opt/acm` or `/srv/acm` for the c
 - Those paths contain no symlinks and are not group- or world-writable.
 - The production environment file has owner `root:root` and mode `0600`.
 - Deployment state directories have owner `root:root` and mode `0700`. State files have mode `0600`.
+
+---
 
 ## Bootstrap and first launch
 
@@ -45,7 +52,8 @@ sudo ACM_REPOSITORY_DIR="$(pwd -P)" ACM_DATA_DIR=/var/lib/acm ACM_BACKUP_DIR=/va
 
 Use the checked-in example only as a field reference. Supply the values in [configuration](../docs/configuration.md), including `ACM_DATA_DIR=/var/lib/acm` or another permitted absolute literal path. Do not copy a production environment file as an unprivileged user. `validate` checks the file without printing interpolated secrets.
 
-**CAUTION:** If `deploy/.env.production` already exists, skip the `install` command. That command overwrites its contents. Edit the existing file with `sudoedit` instead.
+> [!CAUTION]
+> If `deploy/.env.production` already exists, skip the `install` command. That command overwrites its contents. Edit the existing file with `sudoedit` instead.
 
 ```bash
 sudo install -o root -g root -m 600 /dev/null deploy/.env.production
@@ -88,6 +96,8 @@ sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)" deploy '<
 `deploy` requires a clean checkout, an existing local target revision, and the verified matching backup. It detaches at the target revision, builds images, starts services, runs smoke checks, and records state. The installed helpers remain available after checkout.
 The installed helpers also support rollback to revisions without toolkit files.
 
+---
+
 ## Backup, restore, and rollback
 
 Use the installed `/usr/local/libexec/acm` helpers for all production operations. Include `--repository-dir "$(pwd -P)"` in each invocation. Use repository-local scripts only for the initial bootstrap or check before the installed helpers exist.
@@ -96,7 +106,8 @@ A manual backup holds the shared operation lock and stops a running server. It c
 
 If this invocation stopped the server, the helper restarts it after it seals the backup. It then releases the operation lock and prints `BACKUP_DIR=...`. A restart failure returns a nonzero status without that success line. The helper never deletes backups. There is no automatic retention policy.
 
-> **CAUTION:** Supervise each backup. Copy, checksum, and Docker commands can hang indefinitely. No automated backup or timeout supervisor is available.
+> [!CAUTION]
+> Supervise each backup. Copy, checksum, and Docker commands can hang indefinitely. No automated backup or timeout supervisor is available.
 >
 > Preserve the output and other evidence. Before recovery, inspect running processes and the relevant container. Do not assume cleanup traps guarantee a restart. Do not kill processes or remove the shared lock as a shortcut.
 
@@ -122,7 +133,8 @@ It stops a running server. It moves the current SQLite set into a new quarantine
 
 Restore moves stale SQLite journals and sidecars into quarantine. It never deletes them. An unsafe symlink or nonregular sidecar causes restore to fail.
 
-**CAUTION:** If restore fails, leave the server stopped. Inspect the reported quarantine directory. Move any partially restored files into a separate quarantine location. Move the original SQLite set back before you start the server. Do not overwrite or delete files during recovery.
+> [!CAUTION]
+> If restore fails, leave the server stopped. Inspect the reported quarantine directory. Move any partially restored files into a separate quarantine location. Move the original SQLite set back before you start the server. Do not overwrite or delete files during recovery.
 
 ## Deployment state recovery
 
