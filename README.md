@@ -1,107 +1,174 @@
 # Chico ACM
 
-Chico ACM is a programming-competition site. The Next.js frontend talks to the Rust API; the API stores application data in SQLite and sends C++ and Rust compilation and execution work to Ramiel. Ramiel compiles with the WASI SDK or Rust toolchain and runs the resulting WebAssembly with Wasmtime. Rust submissions currently support scalar `i32` and `i64` function arguments and results.
+**A programming-competition site for C++ and Rust practice.**
+
+[![Validation](https://github.com/SloppyBobbert/acm/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/SloppyBobbert/acm/actions/workflows/validate.yml)
+
+[Quick start](#docker-compose) · [Practice problems](docs/local-demo.md) · [Testing](#checks) · [Deployment](deploy/README.md) · [Documentation](#further-documentation)
+
+| Frontend | API | Runner |
+| --- | --- | --- |
+| Next.js | Rust with SQLite storage | Ramiel compiles C++ and Rust to WebAssembly and executes them with Wasmtime. |
+
+---
 
 ## Prerequisites
 
-- Docker with Linux containers and Compose 2.39.0 or later for local startup.
-- A native amd64 or arm64 Docker host with Landlock ABI 3 or later; see [runner requirements](crates/ramiel/README.md#docker-platform-support).
-- A development Discord application for login.
-- Rust/Cargo and Node.js with Corepack only if you develop outside Docker.
+For the complete local stack, use:
 
-## Repository map
+- Docker with Linux containers and Compose 2.39.0 or later.
+- Native amd64 or arm64 containers. The Docker Linux kernel must support Landlock ABI 3 or later.
+- A development Discord application for sign-in.
 
-- `crates/server/` — API, SQLite migrations, job queue, and WebSocket endpoint
-- `crates/ramiel/` — isolated C++/Rust compilation and Wasmtime runner
-- `lilith/` — Next.js frontend
-- `migrations/` — SQLite migrations
-- `deploy/` and `compose.production.yml` — production Caddy/API/runner stack
-- `scripts/dev-local.sh` — canonical local development entry point
+Docker supplies the compilers, Rust, Node.js, and frontend dependencies. You do not need host Rust or Node.js for this setup. Ramiel checks filesystem isolation at startup and refuses to run without it.
+
+See [platform support](crates/ramiel/README.md#docker-platform-support) for verified environments and remaining limits.
 
 ## Local development
 
 ### Docker Compose
 
-With valid `JWT_SECRET`, `DISCORD_CLIENT_ID`, and `DISCORD_SECRET` values in your private root `.env`, run:
+Run these commands from the repository root.
+
+1. Register this redirect URI in your development Discord application:
+
+   ```text
+   http://127.0.0.1:3000/auth/discord
+   ```
+
+2. Create a private root `.env` file. If the file already exists, edit it rather than replace it.
+
+   ```dotenv
+   JWT_SECRET=
+   DISCORD_CLIENT_ID=
+   DISCORD_SECRET=
+   ```
+
+   Fill all three values before startup. Use a long, randomly generated value for `JWT_SECRET`. Use your development application's values for the Discord fields. Never commit this file or share its contents.
+
+3. Start the stack:
+
+   ```sh
+   docker compose up --build
+   ```
+
+4. Open **<http://127.0.0.1:3000>**.
+
+> [!NOTE]
+> The first build downloads large toolchains and dependencies. When the code is unchanged, use `docker compose up` for later starts.
+
+After a code change, rebuild the affected image. The frontend runs `next dev` inside its image, without a source bind mount. This is a local development setup, not the production deployment path.
+
+| Service | Local access |
+| --- | --- |
+| Frontend | `http://127.0.0.1:3000` |
+| API health | `http://127.0.0.1:8081/healthz` |
+| Ramiel | Private Docker network only. No published host port. |
+
+> [!TIP]
+> A new database starts without practice problems. The five [practice fixtures](docs/examples/local-demo/) are not imported automatically. See the [first-run guide](docs/local-demo.md) for administrator setup, sample import, and alternate environment files.
+
+### Check and stop the stack
+
+In another terminal, check service status and the API:
 
 ```sh
-docker compose up --build
+docker compose ps
+curl --fail http://127.0.0.1:8081/healthz
+docker compose logs --tail=100 server frontend ramiel
 ```
 
-Open **<http://127.0.0.1:3000>**. Register `http://127.0.0.1:3000/auth/discord` in the Discord application. The stack starts the frontend, API, and isolated Ramiel runner. Apple Silicon uses native arm64 containers, not Rosetta. The database stays in a separate named volume.
+To stop the services and retain the database:
 
-For later starts without code changes, use `docker compose up`. The first build downloads toolchains and dependencies and can take several minutes. See [first-run instructions, sample import, and data handling](docs/local-demo.md). Do not bypass compiler isolation on an unsupported Docker kernel.
+```sh
+docker compose stop
+```
+
+By default, the database uses the named volume `acm-local_local_data`. It is separate from the host's `db.sqlite` file.
+
+> [!CAUTION]
+> `docker compose down --volumes` deletes the local Docker database. Do not use it to resolve an ordinary startup failure.
 
 ### Host development
 
-The existing host launcher uses an amd64 Docker fallback for Ramiel. Use Compose above for an all-native Apple Silicon stack. To run only the host frontend/API, set `DEV_START_RAMIEL=false`.
-
-Create local environment files from the checked-in examples. Supply development-only secrets; never commit either local file.
+For Rust or frontend development outside Docker, use the host launcher. It requires host Rust/Cargo, Node.js with Corepack, and Yarn Classic. Read the [configuration guide](docs/configuration.md) before choosing database and service addresses.
 
 ```sh
-cp .env.example .env
-cp lilith/.env.local.example lilith/.env.local
 SQLX_OFFLINE=true ./scripts/dev-local.sh
 ```
 
-By default, the script builds the Rust services, installs frontend dependencies when needed, starts Ramiel on `127.0.0.1:8082`, starts the API on `127.0.0.1:8081`, and runs the frontend on `127.0.0.1:3000`. It writes API and runner logs to `.local/logs/`. Override these defaults with `RAMIEL_HOSTNAME`, `RAMIEL_PORT`, `API_HOSTNAME`, `PORT`, and `FRONTEND_PORT`. The root `.env` sets `DATABASE_URL`, and the script creates its empty SQLite file before Cargo builds. `SQLX_OFFLINE=true` makes Cargo use the checked-in `.sqlx` metadata; the server applies migrations when it starts.
+The launcher reads the root `.env` by default. `DEV_ENV_FILE` selects a different private file. It builds the Rust services. If frontend dependencies are missing, it installs them. It writes API and runner logs to `.local/logs/`. The default frontend, API, and runner ports are 3000, 8081, and 8082.
 
-For bounded manual debugging, use three terminals. Do not export the root `.env` into Ramiel:
+The launcher's Docker fallback for Ramiel is amd64-only. On Apple Silicon, use the native Compose setup instead. `DEV_START_RAMIEL=false` starts only the host frontend and API. Compilation then requires a separately configured supported runner.
 
-```sh
-# Terminal 1: runner
-SQLX_OFFLINE=true cargo run -p ramiel -- --hostname 127.0.0.1 --port 8082
+Do not export API secrets into a host-native Ramiel process. See [Ramiel setup](crates/ramiel/README.md#running) for its toolchain and isolation requirements.
 
-# Terminal 2: API
-set -a; . ./.env; set +a
-SQLX_OFFLINE=true cargo run -p server -- --hostname 127.0.0.1 --port 8081
+---
 
-# Terminal 3: frontend
-cd lilith && corepack yarn dev
-```
+## Checks
 
-Set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL` if they differ from the local defaults. The frontend uses the API URL to start Discord sign-in; keep `DISCORD_CLIENT_ID`, `DISCORD_REDIRECT_URI`, and `DISCORD_SECRET` in the server environment only. `DISCORD_REDIRECT_URI` must use the normalized scheme, host, and effective port of `FRONTEND_ORIGIN`, with the `/auth/discord` path and no credentials, query, or fragment. Register that URI in Discord. Use HTTPS in production; HTTP is allowed only for insecure localhost development.
-
-Check the local services at their default addresses:
+With host Rust/Cargo installed, run:
 
 ```sh
-curl --fail http://127.0.0.1:8082/healthz
-curl --fail http://127.0.0.1:8081/healthz
+SQLX_OFFLINE=true cargo check --workspace --locked
 SQLX_OFFLINE=true cargo test --workspace --locked
-(cd lilith && corepack yarn lint && corepack yarn build)
+cargo fmt --all -- --check
+SQLX_OFFLINE=true cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
 
-Ordinary Rust checks use checked-in SQLx metadata with `SQLX_OFFLINE=true`. At runtime, the server can use its default `./db.sqlite`; set `DATABASE_URL` to choose another database. `DATABASE_URL` is required for intentional online SQLx checking against a migrated schema; see [testing](docs/testing.md).
+With frontend dependencies installed, run:
+
+```sh
+cd lilith
+node --test tests/*.test.cjs
+corepack yarn lint
+corepack yarn build
+```
+
+See [testing](docs/testing.md) for Compose checks, isolated recovery tests, and SQLite backup/restore tests. Compiler and recovery tests do not replace a real Discord login and browser Run/Submit check.
 
 ## Containers and production
 
-Build production images on the deployment host with `compose.production.yml`; that Compose file is the canonical deployment source. `/opt/acm` and `/srv/acm` are recommended checkout locations, not the only locations. Another normalized absolute checkout path is allowed only when every path component is in the production trust lane: root-owned, non-symlinked, and not group- or world-writable. Use the operator toolkit in [deploy/README.md](deploy/README.md): run `sudo deploy/bootstrap-ubuntu.sh --check` before host changes. After bootstrap, use the root-run stable helpers, `sudo /usr/local/libexec/acm/acm-deploy.sh --repository-dir "$(pwd -P)"` and `sudo /usr/local/libexec/acm/acm-db.sh --repository-dir "$(pwd -P)"`, for lifecycle and manual database work. Bootstrap installs no backup scheduler; scheduled backups are deferred. CI validates changes but does not replace a host deployment.
+Local `compose.yml` is not a production deployment configuration. Production uses `compose.production.yml` to build Caddy, the API, and Ramiel on the deployment host. The frontend is deployed separately. Production Ramiel remains pinned to native Linux amd64. Both image architectures use WASI SDK 27.
 
-Production Ramiel remains configured for native Linux amd64 with Landlock ABI 3 or later. Local Compose also supports native arm64. Cross-building an amd64 image on Apple Silicon does not make its runner executable under Rosetta.
-
-Production Caddy replaces `X-Forwarded-For` with the directly observed client address. The API trusts only Caddy's fixed private Docker address when applying OAuth-start limits. If a CDN or load balancer is added, redesign and configure trusted-proxy handling; do not accept arbitrary forwarded-address chains.
-
-See [deployment](deploy/README.md) for the production procedure.
+Use the [production operator guide](deploy/README.md). Production requires a trusted root-owned checkout, a private production environment file, and verified backups. Use the installed helpers with an explicit `--repository-dir`. Backups are manual-only. CI does not deploy the application or replace operator checks.
 
 ## Troubleshooting
 
-- A failing API health check usually means the API is not running or could not start because configuration, SQLite access, or migrations failed. Check `.local/logs/` locally or Compose logs in production.
-- Host-native Ramiel requires the compiler toolchains and Landlock helper described in [Ramiel](crates/ramiel/README.md). Use its container on a supported host.
-- Rosetta runner execution is unsupported. On Apple Silicon, use the native arm64 local Compose setup instead of forcing amd64.
-- Open the frontend at the exact configured `FRONTEND_ORIGIN`. `http://localhost:3000` and `http://127.0.0.1:3000` are different browser origins.
-- An empty database shows “No featured problem yet.” This differs from an API connection error.
-- `FRONTEND_ORIGIN` must be a complete `http` or `https` origin with no path or query.
-- Deploy the frontend and API on a shared registrable custom domain, such as `app.example.com` and `api.example.com`. Their session cookie uses `SameSite=Lax`; unrelated Vercel domains can be blocked by third-party-cookie policies.
+- **Missing environment value:** Fill all three required `.env` values. Do not use production secrets for local development.
+- **Port already in use:** Check ports 3000 and 8081 before startup. Do not stop an unrelated service without checking its owner.
+- **Ramiel refuses to start:** Check its logs and [platform requirements](crates/ramiel/README.md#docker-platform-support). Do not disable isolation or add privileges.
+- **Apple Silicon:** Use native arm64 Compose images. Rosetta runner execution is unsupported.
+- **Sign-in fails:** Use `http://127.0.0.1:3000`, not `http://localhost:3000`. Register the exact redirect URI from the [Compose instructions](#docker-compose).
+- **No featured problem yet:** The database has no featured problem. This differs from an API connection failure.
+- **API health fails:** Check Compose logs. Configuration, SQLite access, or migrations can prevent startup.
 
 ## Editor code checks
 
-In submission editor **Settings**, enable **Inline code checks** for advisory C++/Rust syntax markers and inline compiler results after Run/Submit. It is off by default and saved locally. While off, no syntax worker or parser assets load and compiler result panels remain available. Syntax checks run locally; they do not send source to the API or replace isolated compilation. See [behavior and limits](docs/editor-diagnostics.md).
+In the submission editor, open **Settings** and enable **Inline code checks** for optional C++/Rust syntax markers. The setting is off by default and stays in local browser storage. Syntax checks do not send source to the API or replace isolated compilation.
+
+Rust submissions currently support scalar `i32` and `i64` arguments and results. See [Rust submission limits](crates/ramiel/README.md#rust-submissions) and [editor diagnostics](docs/editor-diagnostics.md).
+
+---
+
+## Repository map
+
+| Path | Purpose |
+| --- | --- |
+| `compose.yml` | Complete local Docker stack |
+| `crates/server/` | API, authentication, job queue, and WebSocket endpoint |
+| `crates/ramiel/` | Isolated compilers and Wasmtime runner |
+| `lilith/` | Next.js frontend |
+| `migrations/` | SQLite schema migrations |
+| `scripts/dev-local.sh` | Optional host development launcher |
+| `deploy/` | Production operator tools and instructions |
 
 ## Further documentation
 
+- [First-run guide and practice problems](docs/local-demo.md)
 - [Architecture](docs/architecture.md)
 - [Configuration](docs/configuration.md)
 - [Testing](docs/testing.md)
-- [Inline editor diagnostics](docs/editor-diagnostics.md)
 - [Operations](docs/operations.md)
+- [Production deployment](deploy/README.md)
 - [Ramiel](crates/ramiel/README.md)
